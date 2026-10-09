@@ -10,6 +10,7 @@
 #   bash install.sh --update        # 只更新代码（git 拉取最新）并重启，等价于 update.sh
 #   bash install.sh --update --force # 强制以远程代码为准
 #   bash install.sh --user root     # 指定服务运行用户（默认自动判断 www/root）
+#   bash install.sh --host 0.0.0.0  # 监听地址（默认 127.0.0.1，仅本机/反代访问）
 #
 # 脚本做的事：
 #   1. 查找可用的 Node.js（>= 20），支持宝塔的 Node 版本管理器
@@ -27,6 +28,7 @@ set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$SELF_DIR"
 PORT=27183
+HOST=127.0.0.1
 HOUR=8
 WITH_CRON=1
 WITH_UPDATE=0
@@ -37,12 +39,13 @@ SERVICE_NAME="monkeycode"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --port)     PORT="$2"; shift 2 ;;
+    --host)     HOST="$2"; shift 2 ;;
     --hour)     HOUR="$2"; shift 2 ;;
     --no-cron)  WITH_CRON=0; shift ;;
     --update)   WITH_UPDATE=1; shift ;;
     --force)    FORCE=1; shift ;;
     --user)     RUN_USER_OPT="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数：$1（用 --help 查看用法）"; exit 1 ;;
   esac
 done
@@ -186,7 +189,7 @@ Wants=network-online.target
 Type=simple
 User=${RUN_USER}
 WorkingDirectory=${INSTALL_DIR}/node
-Environment="HOST=127.0.0.1"
+Environment="HOST=${HOST}"
 Environment="PORT=${PORT}"
 ExecStart=${NODE_BIN} ${INSTALL_DIR}/node/src/server.js
 Restart=always
@@ -204,7 +207,7 @@ systemctl restart "${SERVICE_NAME}" || true
 # 等服务起来再判断
 sleep 2
 if systemctl is-active --quiet "${SERVICE_NAME}"; then
-  c_ok "服务已启动，监听 127.0.0.1:${PORT}"
+  c_ok "服务已启动，监听 ${HOST}:${PORT}"
 else
   c_err "服务启动失败"
   echo
@@ -242,6 +245,17 @@ fi
 # 5. 收尾提示
 # --------------------------------------------------------------------------- #
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+if [[ "$HOST" == "127.0.0.1" || "$HOST" == "localhost" ]]; then
+  ACCESS_HINT="   方式 A：浏览器打开 http://127.0.0.1:${PORT} 扫码登录（服务默认只监听本机）
+             服务器上可用 SSH 端口转发后本地访问：
+               ssh -L ${PORT}:127.0.0.1:${PORT} root@${IP:-服务器IP}
+             或用宝塔/Nginx 反向代理到 127.0.0.1:${PORT}"
+else
+  ACCESS_HINT="   方式 A：浏览器打开 http://${IP:-服务器IP}:${PORT} 扫码登录
+             ⚠ 面板可直接读写登录凭证，请务必用防火墙限制来源 IP，勿公开暴露"
+fi
+
 cat <<TIP
 
 ────────────────────────────────────────────────────────
@@ -253,10 +267,7 @@ cat <<TIP
  手动签到   cd ${INSTALL_DIR}/node && ${NODE_BIN} src/checkin.js
 
  下一步：配置登录凭证（二选一）
-   方式 A：浏览器打开 http://${IP:-服务器IP}:${PORT} 扫码登录
-           ⚠ 默认只监听 127.0.0.1，需先用 SSH 端口转发：
-             ssh -L ${PORT}:127.0.0.1:${PORT} root@${IP:-服务器IP}
-             然后本地访问 http://127.0.0.1:${PORT}
+${ACCESS_HINT}
    方式 B：把本机的 config.json 复制到 ${INSTALL_DIR}/config.json
 
    首次签到验证：${NODE_BIN} ${INSTALL_DIR}/node/src/checkin.js
