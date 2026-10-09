@@ -11,6 +11,8 @@
  *   GET  /api/qr_login/poll  轮询扫码状态，成功后自动保存 Cookie
  *   POST /api/status         只做登录态 + 今日签到状态检查（不签到）
  *   POST /api/checkin        执行完整签到流程，返回逐步日志
+ *   GET  /api/update/check   检查是否有新版本（git fetch + 比较提交）
+ *   POST /api/update/apply   拉取最新代码并重启服务（保留本地 config.json）
  *
  * 部署注意：扫码登录会话存在进程内存中，请以单进程方式运行。
  * 与 Python 版不同，这里无需 worker 数约束——事件循环天然并发，
@@ -24,6 +26,7 @@ const path = require('node:path');
 const { MonkeyCodeClient, normalizeCookie } = require('./client.js');
 const { startLogin } = require('./wechat-login.js');
 const { readCookie, writeCookie, maskCookie, CONFIG_PATH } = require('./config.js');
+const updater = require('./update.js');
 
 /** 前端页面：直接复用 Python 版的模板，避免两份拷贝 */
 const INDEX_HTML = path.join(__dirname, '..', '..', 'templates', 'index.html');
@@ -259,6 +262,41 @@ async function apiCheckin(req, res) {
   sendJson(res, 200, { ...result, logs });
 }
 
+// --------------------------------------------------------------------------- //
+// 在线更新
+// --------------------------------------------------------------------------- //
+
+/** GET /api/update/check —— 检查是否有新版本 */
+async function apiUpdateCheck(res) {
+  const info = await updater.getUpdateStatus();
+  sendJson(res, 200, info);
+}
+
+/** POST /api/update/apply —— 拉取最新代码，成功后重启服务 */
+async function apiUpdateApply(req, res) {
+  const body = await readJsonBody(req);
+  const logs = [];
+  const result = { ok: false };
+
+  try {
+    const r = await updater.applyUpdate(Boolean(body.force));
+    result.ok = true;
+    result.changed = r.changed;
+    result.before = r.before;
+    result.after = r.after;
+    result.restarting = Boolean(r.changed);
+    for (const l of r.logs) logs.push(line(l.level, l.msg));
+    if (r.changed) {
+      logs.push(line('warn', '代码已更新，即将重启服务以加载新版本 ...'));
+      updater.scheduleRestart();
+    }
+  } catch (e) {
+    logs.push(line('error', e.message));
+  }
+
+  sendJson(res, 200, { ...result, logs });
+}
+
 /** 返回前端页面。开发时实时读盘，避免改完页面还要重启服务 */
 function serveIndex(res) {
   fs.readFile(INDEX_HTML, (err, buf) => {
@@ -291,6 +329,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/api/qr_login/poll') return apiQrPoll(url, res);
     if (req.method === 'POST' && pathname === '/api/status') return await apiStatus(req, res);
     if (req.method === 'POST' && pathname === '/api/checkin') return await apiCheckin(req, res);
+    if (req.method === 'GET' && pathname === '/api/update/check') return await apiUpdateCheck(res);
+    if (req.method === 'POST' && pathname === '/api/update/apply') return await apiUpdateApply(req, res);
 
     sendJson(res, 404, { ok: false, message: `未知接口：${pathname}` });
   } catch (e) {
@@ -299,7 +339,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 const HOST = process.env.HOST || '127.0.0.1';
-const PORT = Number(process.env.PORT || 5000);
+const PORT = Number(process.env.PORT || 27183);
 
 server.listen(PORT, HOST, () => {
   console.log(`MonkeyCode 签到服务已启动：http://${HOST}:${PORT}`);

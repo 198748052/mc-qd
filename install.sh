@@ -4,9 +4,11 @@
 #
 # 用法：
 #   bash install.sh                 # 安装到脚本所在目录（建议先 clone 到目标位置）
-#   bash install.sh --port 5001     # 指定服务端口（默认 5001）
+#   bash install.sh --port 27183    # 指定服务端口（默认 27183，避开常用端口）
 #   bash install.sh --no-cron       # 不安装每日计划任务
 #   bash install.sh --hour 9        # 计划任务执行时间（默认 8 点）
+#   bash install.sh --update        # 只更新代码（git 拉取最新）并重启，等价于 update.sh
+#   bash install.sh --update --force # 强制以远程代码为准
 #
 # 脚本做的事：
 #   1. 查找可用的 Node.js（>= 20），支持宝塔的 Node 版本管理器
@@ -23,9 +25,11 @@ set -euo pipefail
 # --------------------------------------------------------------------------- #
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$SELF_DIR"
-PORT=5001
+PORT=27183
 HOUR=8
 WITH_CRON=1
+WITH_UPDATE=0
+FORCE=0
 SERVICE_NAME="monkeycode"
 
 while [[ $# -gt 0 ]]; do
@@ -33,7 +37,9 @@ while [[ $# -gt 0 ]]; do
     --port)     PORT="$2"; shift 2 ;;
     --hour)     HOUR="$2"; shift 2 ;;
     --no-cron)  WITH_CRON=0; shift ;;
-    -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --update)   WITH_UPDATE=1; shift ;;
+    --force)    FORCE=1; shift ;;
+    -h|--help)  sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数：$1（用 --help 查看用法）"; exit 1 ;;
   esac
 done
@@ -43,6 +49,20 @@ c_info() { printf '\033[36m[信息]\033[0m %s\n' "$*"; }
 c_ok()   { printf '\033[32m[完成]\033[0m %s\n' "$*"; }
 c_warn() { printf '\033[33m[注意]\033[0m %s\n' "$*"; }
 c_err()  { printf '\033[31m[错误]\033[0m %s\n' "$*" >&2; }
+
+# --------------------------------------------------------------------------- #
+# -1. 更新模式：委托给 update.sh，只更新代码 + 重启，不重复安装
+# --------------------------------------------------------------------------- #
+if [[ $WITH_UPDATE -eq 1 ]]; then
+  UPDATE_SH="$INSTALL_DIR/update.sh"
+  if [[ ! -f "$UPDATE_SH" ]]; then
+    c_err "找不到 update.sh，无法执行更新"
+    exit 1
+  fi
+  ARGS=()
+  [[ $FORCE -eq 1 ]] && ARGS+=(--force)
+  exec bash "$UPDATE_SH" "${ARGS[@]}"
+fi
 
 # --------------------------------------------------------------------------- #
 # 0. 前置检查

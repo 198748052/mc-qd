@@ -8,7 +8,7 @@ MonkeyCode 自动签到 —— 本地 Web 测试页面（Flask 后端）
 
 启动：
     .venv\Scripts\python.exe web_app.py
-然后浏览器打开 http://127.0.0.1:5000
+然后浏览器打开 http://127.0.0.1:27183
 
 接口一览：
     GET  /                  前端页面
@@ -339,5 +339,5 @@ if __name__ == "__main__":
     # 默认只监听回环地址，部署时由 Nginx 反向代理对外提供访问，
     # 避免暴露到公网（本服务持有登录凭证）。
     host = os.environ.get("HOST", "127.0.0.1")
-    port = int(os.environ.get("PORT", "5000"))
+    port = int(os.environ.get("PORT", "27183"))
     app.run(host=host, port=port, debug=False, threaded=True)

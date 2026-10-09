@@ -386,6 +386,16 @@
         <button id="btn-status">检测登录状态</button>
         <button id="btn-checkin" class="primary">▶ 执行签到</button>
       </div>
+
+      <div class="divider">系统更新</div>
+      <div class="qr-status" id="upd-status">
+        <span class="dot2"></span><span id="upd-text">未检查</span>
+      </div>
+      <p class="hint" id="upd-detail"></p>
+      <div class="btns">
+        <button id="btn-upd-check">检查更新</button>
+        <button id="btn-upd-apply" class="primary" disabled>一键更新并重启</button>
+      </div>
     </section>
 
     <!-- 右：终端输出 -->
@@ -610,6 +620,90 @@ el.checkin.addEventListener('click', async () => {
     busy.remove(); appendLine({ t: now(), level: 'error', msg: '请求失败：' + e.message });
   } finally { setBusy(false); }
 });
+
+/* ===================== 在线更新 ===================== */
+const updStatus = document.getElementById('upd-status');
+const updText   = document.getElementById('upd-text');
+const updDetail = document.getElementById('upd-detail');
+const updCheck  = document.getElementById('btn-upd-check');
+const updApply  = document.getElementById('btn-upd-apply');
+
+function setUpdateStatus(text, kind) {
+  updStatus.className = 'qr-status' + (kind ? ' ' + kind : '');
+  updText.textContent = text;
+}
+
+// 检查更新
+updCheck.addEventListener('click', async () => {
+  updCheck.disabled = true;
+  updDetail.textContent = '';
+  setUpdateStatus('正在检查更新 ...', 'wait');
+  try {
+    const r = await fetch('/api/update/check', { cache: 'no-store' }).then(x => x.json());
+    if (!r.ok) {
+      setUpdateStatus(r.message || '检查失败', 'err');
+      updApply.disabled = true;
+      return;
+    }
+    if (r.up_to_date) {
+      setUpdateStatus('已是最新版本（' + r.local + '）', 'ok');
+      updApply.disabled = true;
+    } else {
+      setUpdateStatus(`发现新版本：${r.local} → ${r.remote_commit}（落后 ${r.behind} 个提交）`, 'wait');
+      updDetail.textContent = r.remote_subject ? '最新提交：' + r.remote_subject : '';
+      updApply.disabled = false;
+    }
+  } catch (e) {
+    setUpdateStatus('检查失败：' + e.message, 'err');
+  } finally {
+    updCheck.disabled = false;
+  }
+});
+
+// 一键更新并重启
+updApply.addEventListener('click', async () => {
+  if (!confirm('确定要更新代码并重启服务吗？更新期间服务会短暂中断。')) return;
+  updApply.disabled = true;
+  setBusy(true);
+  clearLog();
+  const busy = appendBusy('正在拉取最新代码 ...');
+  try {
+    const r = await post('/api/update/apply', {});
+    busy.remove();
+    (r.logs || []).forEach(appendLine);
+    if (r.ok && r.changed) {
+      toast('更新完成，服务重启中 ...');
+      setUpdateStatus('服务重启中，等待恢复 ...', 'wait');
+      waitForRestart();
+    } else if (r.ok) {
+      toast('代码已是最新');
+      setUpdateStatus('已是最新版本', 'ok');
+      updApply.disabled = true;
+    } else {
+      toast('更新失败，请查看日志');
+    }
+  } catch (e) {
+    busy.remove();
+    appendLine({ t: now(), level: 'error', msg: '请求失败：' + e.message });
+  } finally {
+    setBusy(false);
+  }
+});
+
+// 更新后轮询，等新进程恢复再刷新页面
+function waitForRestart() {
+  const timer = setInterval(async () => {
+    try {
+      const res = await fetch('/api/cookie', { cache: 'no-store' });
+      if (res.ok) {
+        clearInterval(timer);
+        toast('服务已恢复，正在刷新 ...');
+        setTimeout(() => location.reload(), 600);
+      }
+    } catch (e) { /* 服务重启中，继续等待 */ }
+  }, 1500);
+  setTimeout(() => clearInterval(timer), 30000);
+}
 
 // 时间戳（本地）
 function now() { return new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
