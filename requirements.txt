@@ -1,0 +1,4 @@
+requests>=2.31.0
+flask>=3.0.0
+# 生产环境 WSGI 服务器：仅 Linux 服务器需要，Windows 开发机自动跳过
+gunicorn>=21.2; sys_platform != "win32"

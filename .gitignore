@@ -1,0 +1,26 @@
+# Python 虚拟环境
+.venv/
+venv/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 本地凭证（含登录 Cookie，绝不入库）
+config.json
+
+# 浏览器请求录制文件（一次性逆向素材）
+mokeycode-*.json
+
+# Node
+node_modules/
+npm-debug.log*
+
+# 打包产物（内部含 .venv 与凭证，不应入库）
+*.zip
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MonkeyCode // 签到终端</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* ===================== 设计变量 ===================== */
+  :root {
+    --bg:        #0b0d0a;   /* 背景近黑，带一点墨绿 */
+    --panel:     #12150e;   /* 面板底色 */
+    --panel-2:   #171b12;   /* 次级面板 */
+    --line:      #262d1c;   /* 描边 */
+    --text:      #e9edd9;   /* 主文字 */
+    --muted:     #808c6d;   /* 次要文字 */
+    --accent:    #f2e01f;   /* 香蕉黄（主强调色） */
+    --accent-dim:#8a8318;
+    --ok:        #8ce07a;
+    --warn:      #f5c542;
+    --error:     #ff6f5e;
+    --mono:      "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+    --display:   "Bricolage Grotesque", var(--mono);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.6;
+    overflow-x: hidden;
+    /* 顶部一层香蕉黄光晕，制造纵深 */
+    background-image:
+      radial-gradient(900px 500px at 82% -10%, rgba(242,224,31,.10), transparent 60%),
+      radial-gradient(700px 420px at -5% 110%, rgba(140,224,122,.06), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  /* 细微噪点纹理，避免纯色背景的塑料感 */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    opacity: .035;
+    z-index: 999;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ===================== 布局 ===================== */
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 40px 24px 64px;
+  }
+
+  /* 入场动画：逐个淡入上浮 */
+  .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    animation: rise .7s cubic-bezier(.2,.8,.2,1) forwards;
+  }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+
+  header { margin-bottom: 26px; }
+
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: .38em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::after {
+    content: "";
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, var(--accent-dim), transparent);
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(30px, 5vw, 52px);
+    line-height: 1.02;
+    letter-spacing: -.02em;
+    margin: 0 0 10px;
+  }
+  h1 .hl { color: var(--accent); }
+
+  .sub { color: var(--muted); margin: 0; max-width: 62ch; }
+
+  /* 顶部状态徽章行 */
+  .badges {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    margin: 22px 0 30px;
+  }
+  .badge {
+    flex: 1 1 190px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .badge::after {            /* 左侧一条强调色竖线 */
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--line);
+    transition: background .3s;
+  }
+  .badge.ok::after   { background: var(--ok); }
+  .badge.warn::after { background: var(--warn); }
+  .badge .k {
+    font-size: 10px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--muted); display: block; margin-bottom: 4px;
+  }
+  .badge .v { font-size: 19px; font-weight: 700; font-family: var(--display); }
+  .badge .v.ok   { color: var(--ok); }
+  .badge .v.warn { color: var(--warn); }
+  .badge .v.muted{ color: var(--muted); font-weight: 400; font-size: 15px; }
+
+  /* 主体两栏：左控制台 / 右终端 */
+  .grid {
+    display: grid;
+    grid-template-columns: 400px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+  }
+
+  .card h2 {
+    font-family: var(--display);
+    font-size: 15px; letter-spacing: .04em;
+    margin: 0 0 6px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h2 .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 10px var(--accent);
+  }
+
+  label.field {
+    display: block;
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--muted); margin: 18px 0 8px;
+  }
+
+  textarea, input[type=text] {
+    width: 100%;
+    background: #0a0c07;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 12px 14px;
+    resize: vertical;
+    min-height: 84px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  textarea:focus, input:focus {
+    border-color: var(--accent-dim);
+    box-shadow: 0 0 0 3px rgba(242,224,31,.09);
+  }
+
+  .hint { font-size: 11.5px; color: var(--muted); margin: 8px 0 0; }
+  .hint code { color: var(--accent); }
+
+  /* ---------- 扫码登录区 ---------- */
+  .divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 22px 0 6px;
+    color: var(--muted); font-size: 10.5px;
+    letter-spacing: .24em; text-transform: uppercase;
+  }
+  .divider::before, .divider::after {
+    content: ""; flex: 1; height: 1px; background: var(--line);
+  }
+
+  .qr-panel { margin-top: 14px; }
+  .qr-panel[hidden] { display: none; }
+
+  .qr-frame {
+    position: relative;
+    display: flex; justify-content: center;
+    padding: 14px;
+    background: #fff;              /* 二维码需白底才能被扫码 */
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    min-height: 150px;
+    align-items: center;
+  }
+  .qr-frame img { width: 100%; max-width: 210px; display: block; }
+  .qr-frame .mask {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(11,13,10,.88);
+    border-radius: 12px;
+    color: var(--accent); font-weight: 700; letter-spacing: .1em;
+  }
+  .qr-frame .mask[hidden] { display: none; }
+
+  .qr-status {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 12px; font-size: 12.5px; color: var(--muted);
+  }
+  .qr-status .dot2 {
+    flex: none; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted);
+  }
+  .qr-status.wait .dot2 { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .qr-status.ok   .dot2 { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  .qr-status.err  .dot2 { background: var(--error); }
+  @keyframes pulse { 50% { opacity: .22; } }
+
+  /* 按钮 */
+  .btns { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+
+  button {
+    font-family: var(--mono);
+    font-size: 13px; font-weight: 700; letter-spacing: .06em;
+    border-radius: 9px;
+    padding: 13px 16px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    transition: transform .12s, background .2s, border-color .2s, box-shadow .2s;
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+  }
+  button:hover { transform: translateY(-1px); border-color: var(--muted); }
+  button:active { transform: translateY(0); }
+  button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+  button.primary {
+    background: var(--accent);
+    color: #15170a;
+    border-color: var(--accent);
+    box-shadow: 0 6px 22px -8px var(--accent);
+  }
+  button.primary:hover {
+    background: #fff04a;
+    box-shadow: 0 10px 30px -8px var(--accent);
+  }
+
+  /* 终端窗口 */
+  .terminal { display: flex; flex-direction: column; min-height: 460px; }
+
+  .term-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding-bottom: 14px; margin-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .term-bar .lights { display: flex; gap: 6px; }
+  .term-bar .lights i {
+    width: 11px; height: 11px; border-radius: 50%; display: block;
+    background: #2c3320;
+  }
+  .term-bar .lights i:nth-child(1) { background: #ff5f57; }
+  .term-bar .lights i:nth-child(2) { background: #febc2e; }
+  .term-bar .lights i:nth-child(3) { background: #28c840; }
+  .term-bar .title { font-size: 12px; color: var(--muted); letter-spacing: .1em; }
+  .term-bar .clock { margin-left: auto; font-size: 12px; color: var(--accent); }
+
+  #log {
+    flex: 1;
+    font-size: 12.8px;
+    overflow-y: auto;
+    max-height: 520px;
+    padding-right: 6px;
+  }
+  #log .line {
+    display: flex; gap: 10px;
+    padding: 3px 0;
+    animation: pop .25s ease-out;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateX(-6px); } }
+  #log .t { color: #55603f; flex: none; }
+  #log .lv { flex: none; width: 46px; font-weight: 700; }
+  #log .msg { white-space: pre-wrap; word-break: break-word; }
+  .lv-info  { color: var(--muted); }
+  .lv-ok    { color: var(--ok); }
+  .lv-warn  { color: var(--warn); }
+  .lv-error { color: var(--error); }
+
+  /* 终端光标 */
+  .cursor {
+    display: inline-block; width: 8px; height: 15px;
+    background: var(--accent); vertical-align: -2px;
+    animation: blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .placeholder { color: #55603f; }
+
+  /* toast 提示 */
+  #toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px);
+    background: var(--accent); color: #15170a;
+    font-weight: 700; font-size: 13px;
+    padding: 11px 20px; border-radius: 999px;
+    opacity: 0; pointer-events: none;
+    transition: opacity .25s, transform .25s;
+    box-shadow: 0 10px 34px -10px var(--accent);
+    z-index: 1000;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (max-width: 860px) {
+    .grid { grid-template-columns: 1fr; }
+    .wrap { padding: 28px 16px 48px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============ 头部 ============ -->
+  <header class="reveal" style="animation-delay:.02s">
+    <p class="eyebrow">monkeycode · auto check-in</p>
+    <h1>签到<span class="hl">终端</span></h1>
+    <p class="sub">本地测试页：填入会话 Cookie 后即可一键完成 MonkeyCode 的每日签到（含人机验证 PoW 求解）。</p>
+  </header>
+
+  <!-- ============ 状态徽章 ============ -->
+  <section class="badges reveal" style="animation-delay:.10s">
+    <div class="badge" id="b-user">
+      <span class="k">当前用户</span>
+      <span class="v muted" id="v-user">—</span>
+    </div>
+    <div class="badge" id="b-checkin">
+      <span class="k">今日签到</span>
+      <span class="v muted" id="v-checkin">未检测</span>
+    </div>
+    <div class="badge" id="b-balance">
+      <span class="k">钱包余额</span>
+      <span class="v muted" id="v-balance">—</span>
+    </div>
+  </section>
+
+  <!-- ============ 主体 ============ -->
+  <div class="grid">
+
+    <!-- 左：控制面板 -->
+    <section class="card reveal" style="animation-delay:.18s">
+      <h2><span class="dot"></span>会话凭证</h2>
+
+      <!-- 自动获取：微信扫码登录，全程在服务端完成 -->
+      <button id="btn-qr" style="margin-top:16px;width:100%">微信扫码登录（自动获取）</button>
+      <div class="qr-panel" id="qr-panel" hidden>
+        <div class="qr-frame">
+          <img id="qr-img" alt="微信登录二维码">
+          <div class="mask" id="qr-mask" hidden></div>
+        </div>
+        <div class="qr-status" id="qr-status">
+          <span class="dot2"></span><span id="qr-status-text">正在初始化 ...</span>
+        </div>
+      </div>
+
+      <div class="divider">或手动填写</div>
+
+      <label class="field" for="cookie">Cookie / Session</label>
+      <textarea id="cookie" placeholder="monkeycode_ai_session=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" spellcheck="false"></textarea>
+      <p class="hint">
+        从浏览器 F12 → Application → Cookies → <code>monkeycode_ai_session</code> 复制。
+        保存后写入服务端的 <code>config.json</code>，供签到复用。
+      </p>
+
+      <div class="btns">
+        <button id="btn-save">保存 Cookie</button>
+        <button id="btn-status">检测登录状态</button>
+        <button id="btn-checkin" class="primary">▶ 执行签到</button>
+      </div>
+    </section>
+
+    <!-- 右：终端输出 -->
+    <section class="card terminal reveal" style="animation-delay:.26s">
+      <div class="term-bar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <span class="title">checkin@monkeycode — output</span>
+        <span class="clock" id="clock">--:--:--</span>
+      </div>
+      <div id="log">
+        <div class="line"><span class="t">[就绪]</span><span class="msg placeholder">等待操作 ... <span class="cursor"></span></span></div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ===================== 元素引用 ===================== */
+const el = {
+  cookie:  document.getElementById('cookie'),
+  log:     document.getElementById('log'),
+  clock:   document.getElementById('clock'),
+  toast:   document.getElementById('toast'),
+  save:    document.getElementById('btn-save'),
+  status:  document.getElementById('btn-status'),
+  checkin: document.getElementById('btn-checkin'),
+};
+
+/* ===================== 通用工具 ===================== */
+// 顶部时钟
+function tick() {
+  el.clock.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}
+tick(); setInterval(tick, 1000);
+
+// 轻提示
+let toastTimer = null;
+function toast(msg) {
+  el.toast.textContent = msg;
+  el.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.toast.classList.remove('show'), 2000);
+}
+
+// 清空终端
+function clearLog() { el.log.innerHTML = ''; }
+
+// 追加一行日志 {t, level, msg}
+function appendLine(item) {
+  const map = { info: 'INFO', ok: ' OK ', warn: 'WARN', error: 'FAIL' };
+  const row = document.createElement('div');
+  row.className = 'line';
+  row.innerHTML =
+    `<span class="t">[${item.t || ''}]</span>` +
+    `<span class="lv lv-${item.level}">${map[item.level] || 'INFO'}</span>` +
+    `<span class="msg"></span>`;
+  row.querySelector('.msg').textContent = item.msg;
+  el.log.appendChild(row);
+  el.log.scrollTop = el.log.scrollHeight;   // 自动滚到底部
+}
+
+// 正在运行提示（带光标）
+function appendBusy(text) {
+  const row = document.createElement('div');
+  row.className = 'line';
+  row.innerHTML = `<span class="t">[...]</span><span class="msg placeholder">${text} <span class="cursor"></span></span>`;
+  el.log.appendChild(row);
+  el.log.scrollTop = el.log.scrollHeight;
+  return row;
+}
+
+// 更新徽章
+function setBadges(data) {
+  if (data.user !== undefined && data.user !== null) {
+    const u = data.user;
+    document.getElementById('v-user').textContent = u.name ? `${u.name}` : (u.id || '已登录');
+    document.getElementById('v-user').className = 'v';
+    document.getElementById('b-user').className = 'badge ok';
+  }
+  if (data.checked_in !== undefined && data.checked_in !== null) {
+    const done = data.checked_in;
+    document.getElementById('v-checkin').textContent = done ? '已签到' : '未签到';
+    document.getElementById('v-checkin').className = 'v ' + (done ? 'ok' : 'warn');
+    document.getElementById('b-checkin').className = 'badge ' + (done ? 'ok' : 'warn');
+  }
+  if (data.balance !== undefined && data.balance !== null) {
+    document.getElementById('v-balance').textContent = Number(data.balance).toLocaleString();
+    document.getElementById('v-balance').className = 'v';
+    document.getElementById('b-balance').className = 'badge ok';
+  }
+}
+
+// 统一请求封装
+async function post(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  return res.json();
+}
+
+// 按钮禁用态
+function setBusy(busy) {
+  [el.save, el.status, el.checkin].forEach(b => b.disabled = busy);
+}
+
+/* ===================== 微信扫码登录 ===================== */
+let qrTimer = null;
+
+// 停止轮询
+function stopQrPolling() {
+  if (qrTimer) { clearInterval(qrTimer); qrTimer = null; }
+}
+
+// 更新二维码下方的状态文案与指示灯
+function setQrStatus(text, kind) {
+  document.getElementById('qr-status').className = 'qr-status' + (kind ? ' ' + kind : '');
+  document.getElementById('qr-status-text').textContent = text;
+}
+
+// 发起扫码登录
+document.getElementById('btn-qr').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-qr');
+  const img = document.getElementById('qr-img');
+  const mask = document.getElementById('qr-mask');
+
+  stopQrPolling();
+  btn.disabled = true;
+  document.getElementById('qr-panel').hidden = false;
+  mask.hidden = true;
+  img.removeAttribute('src');
+  setQrStatus('正在获取二维码 ...', 'wait');
+
+  try {
+    const r = await post('/api/qr_login/start');
+    if (r.qr) img.src = r.qr;
+    setQrStatus(r.message || '请用微信扫描二维码', 'wait');
+    btn.disabled = false;
+    // 服务端在后台长轮询扫码状态，前端每 1.5s 同步一次结果
+    qrTimer = setInterval(() => pollQr(r.sid), 1500);
+  } catch (e) {
+    setQrStatus('获取二维码失败：' + e.message, 'err');
+    btn.disabled = false;
+  }
+});
+
+// 轮询扫码状态
+async function pollQr(sid) {
+  let r;
+  try {
+    r = await fetch('/api/qr_login/poll?sid=' + encodeURIComponent(sid)).then(x => x.json());
+  } catch (e) {
+    return;   // 网络抖动忽略，下一轮继续
+  }
+
+  const img = document.getElementById('qr-img');
+  const mask = document.getElementById('qr-mask');
+
+  // 二维码可能已被服务端自动刷新
+  if (r.qr && img.src !== r.qr) img.src = r.qr;
+
+  const kind = r.status === 'confirmed' ? 'ok' : (r.status === 'error' ? 'err' : 'wait');
+  setQrStatus(r.message || '', kind);
+
+  if (r.status === 'confirmed') {
+    stopQrPolling();
+    mask.hidden = false;
+    mask.textContent = '已登录 ✓';
+    if (r.masked) appendLine({ t: now(), level: 'ok', msg: '已自动获取并保存 Cookie：' + r.masked });
+    toast('登录成功，Cookie 已保存');
+    // 顺带刷新一次登录状态徽章
+    setTimeout(() => el.status.click(), 400);
+  } else if (r.status === 'error') {
+    stopQrPolling();
+  }
+}
+
+/* ===================== 交互逻辑 ===================== */
+// 保存 Cookie
+el.save.addEventListener('click', async () => {
+  const v = el.cookie.value.trim();
+  if (!v) { toast('请先填写 Cookie'); return; }
+  setBusy(true);
+  try {
+    const r = await post('/api/save_cookie', { cookie: v });
+    toast(r.ok ? '已保存到 config.json' : (r.message || '保存失败'));
+    if (r.ok) { clearLog(); appendLine({ t: now(), level: 'ok', msg: 'Cookie 已保存：' + r.masked }); }
+  } catch (e) {
+    toast('请求失败：' + e.message);
+  } finally { setBusy(false); }
+});
+
+// 检测状态（不签到）
+el.status.addEventListener('click', async () => {
+  setBusy(true); clearLog();
+  const busy = appendBusy('正在检测登录状态 ...');
+  try {
+    const r = await post('/api/status', { cookie: el.cookie.value.trim() });
+    busy.remove();
+    (r.logs || []).forEach(appendLine);
+    setBadges(r);
+  } catch (e) {
+    busy.remove(); appendLine({ t: now(), level: 'error', msg: '请求失败：' + e.message });
+  } finally { setBusy(false); }
+});
+
+// 执行签到
+el.checkin.addEventListener('click', async () => {
+  setBusy(true); clearLog();
+  const busy = appendBusy('正在执行签到，求解工作量证明中 ...');
+  try {
+    const r = await post('/api/checkin', { cookie: el.cookie.value.trim() });
+    busy.remove();
+    (r.logs || []).forEach(appendLine);
+    setBadges(r);
+    toast(r.checked_in ? '签到完成 ✓' : '签到未完成');
+  } catch (e) {
+    busy.remove(); appendLine({ t: now(), level: 'error', msg: '请求失败：' + e.message });
+  } finally { setBusy(false); }
+});
+
+// 时间戳（本地）
+function now() { return new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
+
+// 页面加载时读取已保存的 Cookie
+(async function init() {
+  try {
+    const r = await fetch('/api/cookie').then(x => x.json());
+    if (r.saved) {
+      // 已保存则不回填明文，只提示
+      appendLine({ t: now(), level: 'info', msg: '检测到已保存的 Cookie：' + r.masked + '（可直接点击签到）' });
+    }
+  } catch (e) { /* 忽略 */ }
+})();
+</script>
+</body>
+</html>

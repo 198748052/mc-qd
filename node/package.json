@@ -1,0 +1,14 @@
+{
+  "name": "monkeycode-checkin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MonkeyCode 自动签到 + 微信扫码登录（Node.js 实现，零运行时依赖）",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "checkin": "node src/checkin.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
