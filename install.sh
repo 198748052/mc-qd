@@ -9,6 +9,7 @@
 #   bash install.sh --hour 9        # 计划任务执行时间（默认 8 点）
 #   bash install.sh --update        # 只更新代码（git 拉取最新）并重启，等价于 update.sh
 #   bash install.sh --update --force # 强制以远程代码为准
+#   bash install.sh --user root     # 指定服务运行用户（默认自动判断 www/root）
 #
 # 脚本做的事：
 #   1. 查找可用的 Node.js（>= 20），支持宝塔的 Node 版本管理器
@@ -30,6 +31,7 @@ HOUR=8
 WITH_CRON=1
 WITH_UPDATE=0
 FORCE=0
+RUN_USER_OPT=""
 SERVICE_NAME="monkeycode"
 
 while [[ $# -gt 0 ]]; do
@@ -39,7 +41,8 @@ while [[ $# -gt 0 ]]; do
     --no-cron)  WITH_CRON=0; shift ;;
     --update)   WITH_UPDATE=1; shift ;;
     --force)    FORCE=1; shift ;;
-    -h|--help)  sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --user)     RUN_USER_OPT="$2"; shift 2 ;;
+    -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数：$1（用 --help 查看用法）"; exit 1 ;;
   esac
 done
@@ -129,16 +132,33 @@ fi
 c_ok "使用 Node：$NODE_BIN（$("$NODE_BIN" -v)）"
 
 # --------------------------------------------------------------------------- #
-# 2. 确定运行用户（宝塔环境一般是 www）
+# 2. 确定运行用户
+#    优先 www（宝塔环境常见），但仅当 www 真能读到项目文件时才用。
+#    若项目在 /root 等 700 权限目录下，www 无法进入，此时自动回退 root，
+#    否则 systemd 会因目录不可访问而启动失败。
 # --------------------------------------------------------------------------- #
-if id www >/dev/null 2>&1; then
+# 检测指定用户能否读到项目入口文件（读文件需对路径上每一级目录都有 x 权限）
+user_can_access() {
+  local u="$1" f="$INSTALL_DIR/node/src/server.js"
+  if command -v runuser >/dev/null 2>&1; then
+    runuser -u "$u" -- test -r "$f" 2>/dev/null
+  elif command -v su >/dev/null 2>&1; then
+    su -s /bin/sh "$u" -c "test -r '$f'" 2>/dev/null
+  else
+    return 1
+  fi
+}
+
+if [[ -n "$RUN_USER_OPT" ]]; then
+  RUN_USER="$RUN_USER_OPT"
+elif id www >/dev/null 2>&1 && user_can_access www; then
   RUN_USER="www"
 else
   RUN_USER="root"
 fi
 c_info "服务运行用户：$RUN_USER"
 
-# 服务以 RUN_USER 身份运行，而 config.json 写在项目根目录，
+# 服务以 RUN_USER 身份运行，config.json 写在项目根目录，
 # 所以目录必须对该用户可写，否则扫码保存会静默失败。
 chown "$RUN_USER" "$INSTALL_DIR" 2>/dev/null || true
 
@@ -186,7 +206,13 @@ sleep 2
 if systemctl is-active --quiet "${SERVICE_NAME}"; then
   c_ok "服务已启动，监听 127.0.0.1:${PORT}"
 else
-  c_err "服务启动失败，请查看日志：journalctl -u ${SERVICE_NAME} -n 50 --no-pager"
+  c_err "服务启动失败"
+  echo
+  echo "最近日志："
+  journalctl -u "${SERVICE_NAME}" -n 30 --no-pager 2>/dev/null || true
+  echo
+  echo "常见原因：运行用户（${RUN_USER}）无权访问项目目录 ${INSTALL_DIR}。"
+  echo "可把项目放到 /www/wwwroot 等目录，或执行：sudo bash install.sh --user root"
   exit 1
 fi
 
