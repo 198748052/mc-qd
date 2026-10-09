@@ -1,0 +1,4 @@
+# 强制 shell 脚本以 LF 换行检出。
+# 否则 Windows 上检出会得到 CRLF，经宝塔面板上传到 Linux 后
+# 会因 shebang 行尾带 \r 而报 "$'\r': command not found"。
+*.sh text eol=lf
