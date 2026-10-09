@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MonkeyCode // 登录</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* ===================== 设计变量（与 index.html 保持一致） ===================== */
+  :root {
+    --bg:        #0b0d0a;
+    --panel:     #12150e;
+    --panel-2:   #171b12;
+    --line:      #262d1c;
+    --text:      #e9edd9;
+    --muted:     #808c6d;
+    --accent:    #f2e01f;
+    --accent-dim:#8a8318;
+    --ok:        #8ce07a;
+    --error:     #ff6f5e;
+    --mono:      "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+    --display:   "Bricolage Grotesque", var(--mono);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.6;
+    background-image:
+      radial-gradient(900px 500px at 82% -10%, rgba(242,224,31,.12), transparent 60%),
+      radial-gradient(700px 420px at -5% 110%, rgba(140,224,122,.07), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  /* 噪点纹理 */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    opacity: .035;
+    z-index: 999;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 34px 30px 30px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 30px 80px -40px rgba(0,0,0,.9);
+    animation: rise .6s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+
+  /* 顶部一条强调色光带 */
+  .login-card::before {
+    content: "";
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: .8;
+  }
+
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: .38em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::after {
+    content: "";
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, var(--accent-dim), transparent);
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 34px;
+    line-height: 1.05;
+    letter-spacing: -.02em;
+    margin: 0 0 8px;
+  }
+  h1 .hl { color: var(--accent); }
+
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 12.5px; }
+
+  label.field {
+    display: block;
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 8px;
+  }
+
+  .input-wrap { position: relative; }
+
+  input[type=password] {
+    width: 100%;
+    background: #0a0c07;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 13px 44px 13px 14px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input[type=password]:focus {
+    border-color: var(--accent-dim);
+    box-shadow: 0 0 0 3px rgba(242,224,31,.09);
+  }
+  input[type=password].bad { border-color: var(--error); }
+
+  /* 显示/隐藏密码 */
+  .toggle {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    background: none; border: 0; cursor: pointer;
+    color: var(--muted); font-size: 11px; letter-spacing: .1em;
+    padding: 6px 8px; border-radius: 6px;
+  }
+  .toggle:hover { color: var(--accent); }
+
+  .error {
+    display: none;
+    margin: 12px 0 0; font-size: 12.5px; color: var(--error);
+    align-items: center; gap: 8px;
+  }
+  .error.show { display: flex; }
+  .error::before { content: "!"; font-weight: 700; }
+
+  button.submit {
+    width: 100%;
+    margin-top: 20px;
+    font-family: var(--mono);
+    font-size: 13px; font-weight: 700; letter-spacing: .06em;
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #15170a;
+    transition: transform .12s, background .2s, box-shadow .2s;
+    box-shadow: 0 6px 22px -8px var(--accent);
+  }
+  button.submit:hover { transform: translateY(-1px); background: #fff04a; }
+  button.submit:active { transform: translateY(0); }
+  button.submit:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+  .foot {
+    margin-top: 20px; padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 11px; color: var(--muted);
+  }
+  .foot code { color: var(--accent); }
+</style>
+</head>
+<body>
+  <form class="login-card" id="form" autocomplete="off">
+    <p class="eyebrow">monkeycode · secure access</p>
+    <h1>签到<span class="hl">终端</span></h1>
+    <p class="sub">请输入面板访问密码。该面板可读写登录凭证，请勿在公网无保护暴露。</p>
+
+    <label class="field" for="password">访问密码</label>
+    <div class="input-wrap">
+      <input type="password" id="password" placeholder="••••••••" spellcheck="false" autofocus>
+      <button type="button" class="toggle" id="toggle">显示</button>
+    </div>
+
+    <p class="error" id="error"></p>
+
+    <button type="submit" class="submit" id="submitbtn">进入面板</button>
+
+    <p class="foot">
+      忘记密码？查看项目根目录的 <code>auth.json</code>，
+      或用环境变量 <code>PANEL_PASSWORD</code> 重新指定。
+    </p>
+  </form>
+
+<script>
+  const form = document.getElementById('form');
+  const pwd = document.getElementById('password');
+  const errorEl = document.getElementById('error');
+  const submitBtn = document.getElementById('submitbtn');
+  const toggle = document.getElementById('toggle');
+
+  // 显示/隐藏密码
+  toggle.addEventListener('click', () => {
+    const show = pwd.type === 'password';
+    pwd.type = show ? 'text' : 'password';
+    toggle.textContent = show ? '隐藏' : '显示';
+    pwd.focus();
+  });
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.classList.add('show');
+    pwd.classList.add('bad');
+  }
+
+  pwd.addEventListener('input', () => {
+    errorEl.classList.remove('show');
+    pwd.classList.remove('bad');
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const value = pwd.value.trim();
+    if (!value) { showError('请输入访问密码'); pwd.focus(); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = '验证中 ...';
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        location.href = '/';
+        return;
+      }
+      showError(data.message || '密码错误');
+    } catch (err) {
+      showError('请求失败：' + err.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '进入面板';
+    }
+  });
+</script>
+</body>
+</html>

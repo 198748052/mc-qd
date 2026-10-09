@@ -11,11 +11,13 @@
 #   bash install.sh --update --force # 强制以远程代码为准
 #   bash install.sh --user root     # 指定服务运行用户（默认自动判断 www/root）
 #   bash install.sh --host 0.0.0.0  # 监听地址（默认 127.0.0.1，仅本机/反代访问）
+#   bash install.sh --panel-password 123456  # 指定面板访问密码（不指定则自动生成）
 #
 # 脚本做的事：
 #   1. 查找可用的 Node.js（>= 20），支持宝塔的 Node 版本管理器
 #   2. 生成 systemd 服务并启动（监听 127.0.0.1，由 Nginx 反代对外）
 #   3. 写入每日计划任务 /etc/cron.d/monkeycode
+#   4. 生成面板访问密码（auth.json），保护签到页面与接口
 #
 # 零运行时依赖，无需 npm install。
 # 可重复执行：同一脚本再跑一次即为更新。
@@ -34,6 +36,7 @@ WITH_CRON=1
 WITH_UPDATE=0
 FORCE=0
 RUN_USER_OPT=""
+PANEL_PASSWORD=""
 SERVICE_NAME="monkeycode"
 
 while [[ $# -gt 0 ]]; do
@@ -45,7 +48,8 @@ while [[ $# -gt 0 ]]; do
     --update)   WITH_UPDATE=1; shift ;;
     --force)    FORCE=1; shift ;;
     --user)     RUN_USER_OPT="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --panel-password) PANEL_PASSWORD="$2"; shift 2 ;;
+    -h|--help)  sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数：$1（用 --help 查看用法）"; exit 1 ;;
   esac
 done
@@ -175,6 +179,40 @@ else
 fi
 
 # --------------------------------------------------------------------------- #
+# 2.5 面板访问密码：生成或更新 auth.json（保护签到页面与接口）
+# --------------------------------------------------------------------------- #
+AUTH_FILE="$INSTALL_DIR/auth.json"
+PANEL_PWD_SHOW=""
+
+# 用 Node 的 crypto 生成随机串，避免依赖不同系统的 od/openssl 行为差异
+gen_hex() { "$NODE_BIN" -e "process.stdout.write(require('crypto').randomBytes($1).toString('hex'))"; }
+
+if [[ -n "$PANEL_PASSWORD" ]]; then
+  # 显式指定密码：总是覆盖，同时重置会话密钥
+  SECRET="$(gen_hex 32)"
+  printf '{\n  "password": "%s",\n  "secret": "%s"\n}\n' "$PANEL_PASSWORD" "$SECRET" > "$AUTH_FILE"
+  chmod 600 "$AUTH_FILE"
+  chown "$RUN_USER" "$AUTH_FILE" 2>/dev/null || true
+  PANEL_PWD_SHOW="$PANEL_PASSWORD"
+  c_ok "已按 --panel-password 设置面板访问密码"
+elif [[ -f "$AUTH_FILE" ]]; then
+  # 已存在则原样保留（重复安装不会重置密码）
+  PANEL_PWD_SHOW="$("$NODE_BIN" -e "try{process.stdout.write(require('$AUTH_FILE').password||'')}catch(e){}" 2>/dev/null || true)"
+  chmod 600 "$AUTH_FILE" || true
+  chown "$RUN_USER" "$AUTH_FILE" 2>/dev/null || true
+  c_info "沿用已存在的面板访问密码（auth.json）"
+else
+  # 首次安装：自动生成随机密码
+  NEW_PWD="$(gen_hex 4)"
+  SECRET="$(gen_hex 32)"
+  printf '{\n  "password": "%s",\n  "secret": "%s"\n}\n' "$NEW_PWD" "$SECRET" > "$AUTH_FILE"
+  chmod 600 "$AUTH_FILE"
+  chown "$RUN_USER" "$AUTH_FILE" 2>/dev/null || true
+  PANEL_PWD_SHOW="$NEW_PWD"
+  c_ok "已生成面板访问密码（见下方提示）"
+fi
+
+# --------------------------------------------------------------------------- #
 # 3. 生成 systemd 服务
 # --------------------------------------------------------------------------- #
 c_info "写入 systemd 服务 /etc/systemd/system/${SERVICE_NAME}.service"
@@ -247,13 +285,19 @@ fi
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
 if [[ "$HOST" == "127.0.0.1" || "$HOST" == "localhost" ]]; then
-  ACCESS_HINT="   方式 A：浏览器打开 http://127.0.0.1:${PORT} 扫码登录（服务默认只监听本机）
-             服务器上可用 SSH 端口转发后本地访问：
-               ssh -L ${PORT}:127.0.0.1:${PORT} root@${IP:-服务器IP}
-             或用宝塔/Nginx 反向代理到 127.0.0.1:${PORT}"
+  ACCESS_HINT="   方式 A：浏览器打开 http://127.0.0.1:${PORT} ，输入面板密码后扫码登录
+              （服务默认只监听本机，服务器上可用 SSH 端口转发后本地访问：
+                ssh -L ${PORT}:127.0.0.1:${PORT} root@${IP:-服务器IP}
+              或用宝塔/Nginx 反向代理到 127.0.0.1:${PORT}）"
 else
-  ACCESS_HINT="   方式 A：浏览器打开 http://${IP:-服务器IP}:${PORT} 扫码登录
+  ACCESS_HINT="   方式 A：浏览器打开 http://${IP:-服务器IP}:${PORT} ，输入面板密码后扫码登录
              ⚠ 面板可直接读写登录凭证，请务必用防火墙限制来源 IP，勿公开暴露"
+fi
+
+if [[ -n "$PANEL_PWD_SHOW" ]]; then
+  PANEL_PWD_LINE="  面板密码   ${PANEL_PWD_SHOW}   （也可用 PANEL_PASSWORD 环境变量覆盖）"
+else
+  PANEL_PWD_LINE="  面板密码   （见 ${AUTH_FILE} 或 systemd 服务日志）"
 fi
 
 cat <<TIP
@@ -265,6 +309,9 @@ cat <<TIP
  服务日志   journalctl -u ${SERVICE_NAME} -f
  签到日志   tail -f /var/log/${SERVICE_NAME}-checkin.log
  手动签到   cd ${INSTALL_DIR}/node && ${NODE_BIN} src/checkin.js
+
+${PANEL_PWD_LINE}
+ 修改密码   重跑安装并附加 --panel-password <新密码>，或编辑 ${AUTH_FILE}
 
  下一步：配置登录凭证（二选一）
 ${ACCESS_HINT}

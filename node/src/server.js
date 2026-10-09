@@ -4,6 +4,9 @@
  * MonkeyCode 自动签到 —— HTTP 服务（Node.js，零运行时依赖）。
  *
  * 接口一览：
+ *   GET  /login              登录页（访问密码，未登录时其它页面会重定向到此）
+ *   POST /api/login          校验访问密码并下发会话 Cookie
+ *   POST /api/logout         退出登录，清除会话 Cookie
  *   GET  /                   前端页面（复用 Python 版的 templates/index.html）
  *   GET  /api/cookie         读取已保存的 Cookie（打码显示）
  *   POST /api/save_cookie    保存 Cookie 到 config.json
@@ -27,9 +30,12 @@ const { MonkeyCodeClient, normalizeCookie } = require('./client.js');
 const { startLogin } = require('./wechat-login.js');
 const { readCookie, writeCookie, maskCookie, CONFIG_PATH } = require('./config.js');
 const updater = require('./update.js');
+const auth = require('./auth.js');
 
 /** 前端页面：直接复用 Python 版的模板，避免两份拷贝 */
 const INDEX_HTML = path.join(__dirname, '..', '..', 'templates', 'index.html');
+/** 登录页模板 */
+const LOGIN_HTML = path.join(__dirname, '..', '..', 'templates', 'login.html');
 
 /** 扫码登录会话表：sid -> QrLoginSession（仅存内存，故需单进程） */
 const LOGIN_SESSIONS = new Map();
@@ -89,6 +95,29 @@ function resolveCookie(fromBody) {
 function ensureCookie(cookie) {
   if (!cookie) throw new Error('未提供 Cookie，请先扫码登录或手动填写');
   return cookie;
+}
+
+// --------------------------------------------------------------------------- //
+// 访问鉴权
+// --------------------------------------------------------------------------- //
+
+/** POST /api/login —— 校验访问密码，成功后下发签名会话 Cookie */
+async function apiLogin(req, res) {
+  const body = await readJsonBody(req);
+  if (!auth.checkPassword(body.password)) {
+    // 稍作延迟，抬高暴力破解成本
+    await new Promise((r) => setTimeout(r, 400));
+    return sendJson(res, 401, { ok: false, message: '密码错误' });
+  }
+  const token = auth.issueToken();
+  res.setHeader('Set-Cookie', auth.buildSetCookie(token, Math.floor(auth.SESSION_TTL / 1000)));
+  sendJson(res, 200, { ok: true });
+}
+
+/** POST /api/logout —— 清除会话 Cookie */
+function apiLogout(res) {
+  res.setHeader('Set-Cookie', auth.buildSetCookie('', 0));
+  sendJson(res, 200, { ok: true });
 }
 
 // --------------------------------------------------------------------------- //
@@ -299,7 +328,17 @@ async function apiUpdateApply(req, res) {
 
 /** 返回前端页面。开发时实时读盘，避免改完页面还要重启服务 */
 function serveIndex(res) {
-  fs.readFile(INDEX_HTML, (err, buf) => {
+  serveFile(res, INDEX_HTML);
+}
+
+/** 返回登录页 */
+function serveLogin(res) {
+  serveFile(res, LOGIN_HTML);
+}
+
+/** 读取静态 HTML 文件并返回 */
+function serveFile(res, file) {
+  fs.readFile(file, (err, buf) => {
     if (err) {
       res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
       return res.end(`读取页面失败：${err.message}`);
@@ -322,6 +361,20 @@ const server = http.createServer(async (req, res) => {
   const { pathname } = url;
 
   try {
+    // 公开路由：登录页与登录/登出接口不鉴权
+    if (req.method === 'GET' && pathname === '/login') return serveLogin(res);
+    if (req.method === 'POST' && pathname === '/api/login') return await apiLogin(req, res);
+    if (req.method === 'POST' && pathname === '/api/logout') return apiLogout(res);
+
+    // 其余页面与接口均需登录
+    if (!auth.isAuthed(req)) {
+      if (req.method === 'GET' && !pathname.startsWith('/api/')) {
+        res.writeHead(302, { Location: '/login' });
+        return res.end();
+      }
+      return sendJson(res, 401, { ok: false, message: '未登录或会话已过期', need_login: true });
+    }
+
     if (req.method === 'GET' && pathname === '/') return serveIndex(res);
     if (req.method === 'GET' && pathname === '/api/cookie') return apiCookie(res);
     if (req.method === 'POST' && pathname === '/api/save_cookie') return await apiSaveCookie(req, res);
@@ -344,6 +397,12 @@ const PORT = Number(process.env.PORT || 27183);
 server.listen(PORT, HOST, () => {
   console.log(`MonkeyCode 签到服务已启动：http://${HOST}:${PORT}`);
   console.log(`配置文件：${CONFIG_PATH}`);
+  if (auth.generatedPassword) {
+    console.log('────────────────────────────────────────────');
+    console.log(`已生成面板访问密码：${auth.generatedPassword}`);
+    console.log(`（已保存到 ${auth.AUTH_PATH}，可用 PANEL_PASSWORD 环境变量覆盖）`);
+    console.log('────────────────────────────────────────────');
+  }
 });
 
 // 优雅退出，便于 systemd / 宝塔管理进程

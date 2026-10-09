@@ -9,6 +9,9 @@ __pycache__/
 # 本地凭证（含登录 Cookie，绝不入库）
 config.json
 
+# 面板访问密码与会话签名密钥（本地生成，绝不入库）
+auth.json
+
 # 浏览器请求录制文件（一次性逆向素材）
 mokeycode-*.json
 

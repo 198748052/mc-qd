@@ -11,7 +11,10 @@ MonkeyCode 自动签到 —— 本地 Web 测试页面（Flask 后端）
 然后浏览器打开 http://127.0.0.1:27183
 
 接口一览：
-    GET  /                  前端页面
+    GET  /                  前端页面（需登录）
+    GET  /login             登录页（访问密码）
+    POST /api/login         校验访问密码并建立会话
+    POST /api/logout        退出登录
     GET  /api/cookie        读取已保存的 Cookie（打码显示）
     POST /api/save_cookie   保存 Cookie 到 config.json
     POST /api/qr_login/start 开启微信扫码登录，返回 sid 与二维码
@@ -19,15 +22,23 @@ MonkeyCode 自动签到 —— 本地 Web 测试页面（Flask 后端）
     POST /api/status        只做登录态 + 今日签到状态检查（不签到）
     POST /api/checkin       执行完整签到流程，返回逐步日志
 
-注意：Cookie 是敏感凭证，本服务只监听 127.0.0.1，请勿暴露到公网。
+访问密码来源（优先级从高到低）：
+    1) 环境变量 PANEL_PASSWORD
+    2) 项目根目录 auth.json 的 password 字段
+    3) 首次启动自动生成随机密码并写入 auth.json（同时打印到日志）
+
+注意：Cookie 是敏感凭证，本服务默认只监听 127.0.0.1，
+      对外使用请配合 Nginx 反代与面板访问密码，勿裸奔到公网。
 """
 
+import hmac
 import json
 import os
+import secrets
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, session
 
 # 复用已有的签到客户端与 PoW 求解算法
 from monkeycode_checkin import MonkeyCodeClient, SESSION_COOKIE_NAME, solve_challenges
@@ -38,11 +49,121 @@ app = Flask(__name__)
 
 # config.json 与脚本同目录，用于持久化 Cookie
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+# auth.json 与脚本同目录，用于持久化面板访问密码与会话签名密钥
+AUTH_PATH = os.environ.get(
+    "MONKEYCODE_AUTH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth.json"),
+)
 
 # 扫码登录会话表：sid -> QRLoginSession。
 # 注意：状态存在进程内存里，因此本服务应以单进程方式部署
 # （Flask 自带服务器即为单进程多线程，gunicorn 请使用 workers=1）。
 LOGIN_SESSIONS = {}
+
+
+# --------------------------------------------------------------------------- #
+# 面板访问鉴权
+# --------------------------------------------------------------------------- #
+def _load_auth_store() -> dict:
+    """读取 auth.json，损坏或不存在时返回空字典。"""
+    try:
+        with open(AUTH_PATH, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _init_auth() -> tuple:
+    """
+    解析面板访问密码与会话签名密钥。
+
+    :return: (password, secret, generated) —— generated 仅在自动生成密码时非空
+    """
+    store = _load_auth_store()
+    dirty = False
+
+    # 会话签名密钥必须稳定，否则重启后所有登录态失效
+    if not store.get("secret"):
+        store["secret"] = secrets.token_hex(32)
+        dirty = True
+
+    env_password = (os.environ.get("PANEL_PASSWORD") or "").strip()
+    generated = ""
+    if not env_password and not store.get("password"):
+        store["password"] = secrets.token_hex(4)  # 8 位十六进制
+        generated = store["password"]
+        dirty = True
+
+    if dirty:
+        try:
+            with open(AUTH_PATH, "w", encoding="utf-8") as f:
+                json.dump(store, f, ensure_ascii=False, indent=2)
+            os.chmod(AUTH_PATH, 0o600)
+        except OSError:
+            # 无写权限时忽略：密码仍可在本次进程内使用
+            pass
+
+    return env_password or store.get("password", ""), store["secret"], generated
+
+
+PANEL_PASSWORD, SECRET_KEY, GENERATED_PASSWORD = _init_auth()
+
+app.secret_key = SECRET_KEY
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+)
+
+# 无需登录即可访问的路径
+_PUBLIC_PATHS = {"/login", "/api/login", "/api/logout"}
+
+# 暴力破解限速：IP -> [失败次数, 首次失败时间]
+_LOGIN_FAILS = {}
+_LOGIN_MAX_FAILS = 8
+_LOGIN_WINDOW = 300  # 秒
+
+
+def _check_password(value: str) -> bool:
+    """常量时间比较密码，避免时序侧信道。"""
+    a = (value or "").encode("utf-8")
+    b = (PANEL_PASSWORD or "").encode("utf-8")
+    return hmac.compare_digest(a, b)
+
+
+def _login_rate_limited(ip: str) -> bool:
+    """同一 IP 在窗口期内失败次数过多则短暂拒绝。"""
+    rec = _LOGIN_FAILS.get(ip)
+    if not rec:
+        return False
+    count, first = rec
+    if time.time() - first > _LOGIN_WINDOW:
+        _LOGIN_FAILS.pop(ip, None)
+        return False
+    return count >= _LOGIN_MAX_FAILS
+
+
+def _record_login_fail(ip: str) -> None:
+    now = time.time()
+    rec = _LOGIN_FAILS.get(ip)
+    if not rec or now - rec[1] > _LOGIN_WINDOW:
+        _LOGIN_FAILS[ip] = [1, now]
+    else:
+        rec[0] += 1
+
+
+@app.before_request
+def _require_login():
+    """统一鉴权：未登录时页面重定向到 /login，接口返回 401。"""
+    path = request.path
+    if path in _PUBLIC_PATHS or path.startswith("/static/"):
+        return None
+    if session.get("auth"):
+        return None
+    if path.startswith("/api/"):
+        return jsonify({"ok": False, "message": "未登录或会话已过期",
+                        "need_login": True}), 401
+    return redirect("/login")
 
 
 # --------------------------------------------------------------------------- #
@@ -112,6 +233,46 @@ def _resolve_cookie(req) -> str:
         cookie = req.form.get("cookie", "") or ""
     cookie = cookie.strip()
     return cookie or _read_config_cookie()
+
+
+# --------------------------------------------------------------------------- #
+# 接口：面板登录
+# --------------------------------------------------------------------------- #
+@app.get("/login")
+def login_page():
+    """登录页；已登录则直接回到首页。"""
+    if session.get("auth"):
+        return redirect("/")
+    return render_template("login.html")
+
+
+@app.post("/api/login")
+def api_login():
+    """校验访问密码，成功后写入签名会话。"""
+    data = request.get_json(silent=True) or {}
+    password = (data.get("password") or "").strip() if isinstance(data, dict) else ""
+
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    if _login_rate_limited(ip):
+        return jsonify({"ok": False, "message": "尝试过于频繁，请稍后再试"}), 429
+
+    if not _check_password(password):
+        _record_login_fail(ip)
+        # 稍作延迟，抬高暴力破解成本
+        time.sleep(0.4)
+        return jsonify({"ok": False, "message": "密码错误"}), 401
+
+    _LOGIN_FAILS.pop(ip, None)
+    session.permanent = True
+    session["auth"] = True
+    return jsonify({"ok": True})
+
+
+@app.post("/api/logout")
+def api_logout():
+    """退出登录，清除会话。"""
+    session.clear()
+    return jsonify({"ok": True})
 
 
 # --------------------------------------------------------------------------- #
@@ -340,4 +501,9 @@ if __name__ == "__main__":
     # 避免暴露到公网（本服务持有登录凭证）。
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "27183"))
+    if GENERATED_PASSWORD:
+        print("────────────────────────────────────────────")
+        print(f"已生成面板访问密码：{GENERATED_PASSWORD}")
+        print(f"（已保存到 {AUTH_PATH}，可用 PANEL_PASSWORD 环境变量覆盖）")
+        print("────────────────────────────────────────────")
     app.run(host=host, port=port, debug=False, threaded=True)

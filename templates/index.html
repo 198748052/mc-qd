@@ -71,6 +71,20 @@
 
   header { margin-bottom: 26px; }
 
+  .topline { display: flex; align-items: center; gap: 14px; }
+  .topline .eyebrow { flex: 1; }
+
+  .logout {
+    flex: none;
+    font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 6px 14px;
+  }
+  .logout:hover { color: var(--error); border-color: var(--error); }
+
   .eyebrow {
     font-size: 11px;
     letter-spacing: .38em;
@@ -332,7 +346,10 @@
 
   <!-- ============ 头部 ============ -->
   <header class="reveal" style="animation-delay:.02s">
-    <p class="eyebrow">monkeycode · auto check-in</p>
+    <div class="topline">
+      <p class="eyebrow">monkeycode · auto check-in</p>
+      <button id="btn-logout" class="logout">退出登录</button>
+    </div>
     <h1>签到<span class="hl">终端</span></h1>
     <p class="sub">本地测试页：填入会话 Cookie 后即可一键完成 MonkeyCode 的每日签到（含人机验证 PoW 求解）。</p>
   </header>
@@ -498,6 +515,12 @@ async function post(url, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body || {}),
   });
+  // 会话过期：跳回登录页
+  if (res.status === 401) {
+    const data = await res.json().catch(() => ({}));
+    if (data.need_login) { location.href = '/login'; }
+    return data;
+  }
   return res.json();
 }
 
@@ -619,6 +642,13 @@ el.checkin.addEventListener('click', async () => {
   } catch (e) {
     busy.remove(); appendLine({ t: now(), level: 'error', msg: '请求失败：' + e.message });
   } finally { setBusy(false); }
+});
+
+/* ===================== 退出登录 ===================== */
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  if (!confirm('确定退出登录吗？')) return;
+  try { await post('/api/logout', {}); } catch (e) { /* 忽略，直接跳转 */ }
+  location.href = '/login';
 });
 
 /* ===================== 在线更新 ===================== */
