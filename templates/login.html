@@ -111,6 +111,7 @@
 
   .input-wrap { position: relative; }
 
+  input[type=text],
   input[type=password] {
     width: 100%;
     background: #0a0c07;
@@ -123,11 +124,16 @@
     outline: none;
     transition: border-color .2s, box-shadow .2s;
   }
+  input[type=text] { padding-right: 14px; }
+  input[type=text]:focus,
   input[type=password]:focus {
     border-color: var(--accent-dim);
     box-shadow: 0 0 0 3px rgba(242,224,31,.09);
   }
-  input[type=password].bad { border-color: var(--error); }
+  input.bad { border-color: var(--error); }
+
+  /* 用户名与密码之间留出间距 */
+  .field-gap { margin-top: 18px; }
 
   /* 显示/隐藏密码 */
   .toggle {
@@ -178,9 +184,12 @@
     <h1>签到<span class="hl">终端</span></h1>
     <p class="sub">请输入面板访问密码。该面板可读写登录凭证，请勿在公网无保护暴露。</p>
 
-    <label class="field" for="password">访问密码</label>
+    <label class="field" for="username">用户名</label>
+    <input type="text" id="username" placeholder="admin" spellcheck="false" autocomplete="username" autofocus>
+
+    <label class="field field-gap" for="password">密码</label>
     <div class="input-wrap">
-      <input type="password" id="password" placeholder="••••••••" spellcheck="false" autofocus>
+      <input type="password" id="password" placeholder="••••••••" spellcheck="false" autocomplete="current-password">
       <button type="button" class="toggle" id="toggle">显示</button>
     </div>
 
@@ -196,6 +205,7 @@
 
 <script>
   const form = document.getElementById('form');
+  const userEl = document.getElementById('username');
   const pwd = document.getElementById('password');
   const errorEl = document.getElementById('error');
   const submitBtn = document.getElementById('submitbtn');
@@ -215,15 +225,19 @@
     pwd.classList.add('bad');
   }
 
-  pwd.addEventListener('input', () => {
-    errorEl.classList.remove('show');
-    pwd.classList.remove('bad');
+  [userEl, pwd].forEach((inp) => {
+    inp.addEventListener('input', () => {
+      errorEl.classList.remove('show');
+      inp.classList.remove('bad');
+    });
   });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const value = pwd.value.trim();
-    if (!value) { showError('请输入访问密码'); pwd.focus(); return; }
+    const username = userEl.value.trim();
+    const password = pwd.value;
+    if (!username) { showError('请输入用户名'); userEl.focus(); return; }
+    if (!password) { showError('请输入密码'); pwd.focus(); return; }
 
     submitBtn.disabled = true;
     submitBtn.textContent = '验证中 ...';
@@ -231,14 +245,14 @@
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: value }),
+        body: JSON.stringify({ username, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
         location.href = '/';
         return;
       }
-      showError(data.message || '密码错误');
+      showError(data.message || '用户名或密码错误');
     } catch (err) {
       showError('请求失败：' + err.message);
     } finally {

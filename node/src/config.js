@@ -30,6 +30,9 @@ function readCookie() {
 
 /**
  * 写入 Cookie，返回规范化后的完整 Cookie 串。
+ *
+ * 注意：config.json 现在同时保存多账号与定时配置，这里采用“读-改-写”，
+ * 只覆盖 cookie 字段，避免把 accounts / schedule 冲掉。
  * @param {string} cookie
  * @returns {string}
  */
@@ -37,7 +40,16 @@ function writeCookie(cookie) {
   const v = (cookie || '').trim();
   if (!v) throw new Error('Cookie 不能为空');
   const normalized = v.includes('=') ? v : `${SESSION_COOKIE_NAME}=${v}`;
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify({ cookie: normalized }, null, 2), {
+
+  let data = {};
+  try {
+    data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) || {};
+  } catch {
+    data = {};
+  }
+  data.cookie = normalized;
+
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2), {
     encoding: 'utf8',
     mode: 0o600, // 内含登录凭证，收紧权限
   });

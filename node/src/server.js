@@ -4,18 +4,28 @@
  * MonkeyCode 自动签到 —— HTTP 服务（Node.js，零运行时依赖）。
  *
  * 接口一览：
- *   GET  /login              登录页（访问密码，未登录时其它页面会重定向到此）
- *   POST /api/login          校验访问密码并下发会话 Cookie
- *   POST /api/logout         退出登录，清除会话 Cookie
- *   GET  /                   前端页面（复用 Python 版的 templates/index.html）
- *   GET  /api/cookie         读取已保存的 Cookie（打码显示）
- *   POST /api/save_cookie    保存 Cookie 到 config.json
- *   POST /api/qr_login/start 开启微信扫码登录，返回 sid 与二维码
- *   GET  /api/qr_login/poll  轮询扫码状态，成功后自动保存 Cookie
- *   POST /api/status         只做登录态 + 今日签到状态检查（不签到）
- *   POST /api/checkin        执行完整签到流程，返回逐步日志
- *   GET  /api/update/check   检查是否有新版本（git fetch + 比较提交）
- *   POST /api/update/apply   拉取最新代码并重启服务（保留本地 config.json）
+ *   GET  /login               登录页（用户名 + 密码，未登录时其它页面会重定向到此）
+ *   POST /api/login           校验用户名/密码并下发会话 Cookie
+ *   POST /api/logout          退出登录，清除会话 Cookie
+ *   GET  /api/panel           读取当前面板用户名
+ *   POST /api/panel/update    修改面板用户名 / 密码
+ *   GET  /                    前端页面（复用 Python 版的 templates/index.html）
+ *   GET  /api/cookie          读取当前启用账号的 Cookie（打码显示，兼容旧接口）
+ *   POST /api/save_cookie     更新当前启用账号的 Cookie（兼容旧接口）
+ *   GET  /api/accounts        列出已保存账号
+ *   POST /api/accounts/add    新增账号
+ *   POST /api/accounts/update 修改账号（重命名 / 更新 Cookie）
+ *   POST /api/accounts/delete 删除账号
+ *   POST /api/accounts/active 切换当前启用账号
+ *   POST /api/qr_login/start  开启微信扫码登录，返回 sid 与二维码
+ *   GET  /api/qr_login/poll   轮询扫码状态，成功后保存为新账号
+ *   POST /api/status          检查指定账号登录态 + 今日签到状态（不签到）
+ *   POST /api/checkin         对指定账号执行完整签到
+ *   POST /api/checkin_all     对所有账号执行签到
+ *   GET  /api/schedule        读取定时签到配置
+ *   POST /api/schedule        设置定时签到（启用开关 + HH:MM）
+ *   GET  /api/update/check    检查是否有新版本（git fetch + 比较提交）
+ *   POST /api/update/apply    拉取最新代码并重启服务（保留本地 config.json）
  *
  * 部署注意：扫码登录会话存在进程内存中，请以单进程方式运行。
  * 与 Python 版不同，这里无需 worker 数约束——事件循环天然并发，
@@ -26,11 +36,13 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { MonkeyCodeClient, normalizeCookie } = require('./client.js');
+const { MonkeyCodeClient } = require('./client.js');
 const { startLogin } = require('./wechat-login.js');
-const { readCookie, writeCookie, maskCookie, CONFIG_PATH } = require('./config.js');
+const { CONFIG_PATH } = require('./config.js');
 const updater = require('./update.js');
 const auth = require('./auth.js');
+const store = require('./store.js');
+const scheduler = require('./scheduler.js');
 
 /** 前端页面：直接复用 Python 版的模板，避免两份拷贝 */
 const INDEX_HTML = path.join(__dirname, '..', '..', 'templates', 'index.html');
@@ -82,32 +94,24 @@ function readJsonBody(req) {
   });
 }
 
-/**
- * 确定本次操作使用的 Cookie：优先用请求里传入的，否则回退到 config.json。
- * @param {string} fromBody
- */
-function resolveCookie(fromBody) {
-  const v = (fromBody || '').trim();
-  return v ? normalizeCookie(v) : readCookie();
-}
-
-/** 统一的登录态异常包装 */
-function ensureCookie(cookie) {
-  if (!cookie) throw new Error('未提供 Cookie，请先扫码登录或手动填写');
-  return cookie;
+/** 解析目标账号 id：请求体指定 > 当前启用账号 */
+function resolveAccountId(fromBody) {
+  const id = (fromBody || '').trim();
+  if (id) return id;
+  return store.readState().active_id;
 }
 
 // --------------------------------------------------------------------------- //
 // 访问鉴权
 // --------------------------------------------------------------------------- //
 
-/** POST /api/login —— 校验访问密码，成功后下发签名会话 Cookie */
+/** POST /api/login —— 校验用户名/密码，成功后下发签名会话 Cookie */
 async function apiLogin(req, res) {
   const body = await readJsonBody(req);
-  if (!auth.checkPassword(body.password)) {
+  if (!auth.checkCredentials(body.username, body.password)) {
     // 稍作延迟，抬高暴力破解成本
     await new Promise((r) => setTimeout(r, 400));
-    return sendJson(res, 401, { ok: false, message: '密码错误' });
+    return sendJson(res, 401, { ok: false, message: '用户名或密码错误' });
   }
   const token = auth.issueToken();
   res.setHeader('Set-Cookie', auth.buildSetCookie(token, Math.floor(auth.SESSION_TTL / 1000)));
@@ -120,27 +124,103 @@ function apiLogout(res) {
   sendJson(res, 200, { ok: true });
 }
 
+/** GET /api/panel —— 当前面板用户名 */
+function apiPanelInfo(res) {
+  sendJson(res, 200, { ok: true, username: auth.getUsername() });
+}
+
+/** POST /api/panel/update —— 修改用户名 / 密码 */
+async function apiPanelUpdate(req, res) {
+  const body = await readJsonBody(req);
+  const r = auth.updateCredentials({
+    currentPassword: body.current_password,
+    username: body.username,
+    newPassword: body.new_password,
+  });
+  if (!r.ok) return sendJson(res, 400, { ok: false, message: r.message });
+
+  // 密码变更会轮换签名密钥，为当前用户补发一个新会话，避免被自己踢下线
+  if (r.rotated) {
+    const token = auth.issueToken();
+    res.setHeader('Set-Cookie', auth.buildSetCookie(token, Math.floor(auth.SESSION_TTL / 1000)));
+  }
+  sendJson(res, 200, { ok: true, username: r.username, rotated: Boolean(r.rotated) });
+}
+
 // --------------------------------------------------------------------------- //
-// 路由处理
+// 账号管理
 // --------------------------------------------------------------------------- //
 
-/** GET /api/cookie —— 仅回显打码值，不返回明文 */
+/** GET /api/cookie —— 当前启用账号的打码 Cookie（兼容旧接口） */
 function apiCookie(res) {
-  const cookie = readCookie();
+  const state = store.readState();
+  const acc = state.accounts.find((a) => a.id === state.active_id);
   sendJson(res, 200, {
-    saved: Boolean(cookie),
-    masked: maskCookie(cookie),
+    saved: Boolean(acc && acc.cookie),
+    masked: acc ? store.mask(acc.cookie) : '',
   });
 }
 
-/** POST /api/save_cookie */
+/** POST /api/save_cookie —— 更新当前启用账号的 Cookie（兼容旧接口） */
 async function apiSaveCookie(req, res) {
   const body = await readJsonBody(req);
   const raw = (body.cookie || '').trim();
   if (!raw) return sendJson(res, 400, { ok: false, message: 'Cookie 不能为空' });
-  const cookie = writeCookie(raw);
-  sendJson(res, 200, { ok: true, message: '已保存', masked: maskCookie(cookie) });
+
+  const state = store.readState();
+  if (state.active_id) {
+    store.updateAccount(state.active_id, { cookie: raw });
+  } else {
+    const acc = store.addAccount('默认账号', raw);
+    store.setActive(acc.id);
+  }
+  const acc = store.getAccount(state.active_id || store.readState().active_id);
+  sendJson(res, 200, { ok: true, message: '已保存', masked: acc ? store.mask(acc.cookie) : '' });
 }
+
+/** GET /api/accounts —— 列出已保存账号 */
+function apiAccountsList(res) {
+  const state = store.readState();
+  sendJson(res, 200, { ok: true, accounts: store.listAccounts(), active_id: state.active_id });
+}
+
+/** POST /api/accounts/add */
+async function apiAccountAdd(req, res) {
+  const body = await readJsonBody(req);
+  const cookie = (body.cookie || '').trim();
+  if (!cookie) return sendJson(res, 400, { ok: false, message: 'Cookie 不能为空' });
+  const added = store.addAccount(body.name, cookie);
+  const acc = store.getAccount(added.id);
+  sendJson(res, 200, { ok: true, id: added.id, name: added.name, masked: store.mask(acc.cookie) });
+}
+
+/** POST /api/accounts/update */
+async function apiAccountUpdate(req, res) {
+  const body = await readJsonBody(req);
+  const r = store.updateAccount((body.id || '').trim(), {
+    name: body.name,
+    cookie: body.cookie,
+  });
+  sendJson(res, r.ok ? 200 : 400, r.ok ? { ok: true } : { ok: false, message: r.message });
+}
+
+/** POST /api/accounts/delete */
+async function apiAccountDelete(req, res) {
+  const body = await readJsonBody(req);
+  const r = store.deleteAccount((body.id || '').trim());
+  sendJson(res, r.ok ? 200 : 400, r.ok ? { ok: true } : { ok: false, message: r.message });
+}
+
+/** POST /api/accounts/active */
+async function apiAccountActive(req, res) {
+  const body = await readJsonBody(req);
+  const r = store.setActive((body.id || '').trim());
+  sendJson(res, r.ok ? 200 : 400, r.ok ? { ok: true } : { ok: false, message: r.message });
+}
+
+// --------------------------------------------------------------------------- //
+// 微信扫码登录
+// --------------------------------------------------------------------------- //
 
 /** POST /api/qr_login/start —— 开启扫码登录，等二维码就绪后返回 */
 async function apiQrStart(res) {
@@ -156,7 +236,7 @@ async function apiQrStart(res) {
   sendJson(res, 200, sess.snapshot());
 }
 
-/** GET /api/qr_login/poll —— 轮询扫码状态，成功后落盘 Cookie */
+/** GET /api/qr_login/poll —— 轮询扫码状态，成功后保存为新账号 */
 function apiQrPoll(url, res) {
   const sid = url.searchParams.get('sid') || '';
   const sess = LOGIN_SESSIONS.get(sid);
@@ -164,18 +244,27 @@ function apiQrPoll(url, res) {
 
   const data = sess.snapshot();
 
-  // 登录成功：持久化 Cookie（只处理一次）
+  // 登录成功：保存为新账号并设为启用（只处理一次）
   if (sess.status === 'confirmed' && sess.cookie) {
-    const cookie = writeCookie(sess.cookie);
+    const name =
+      (sess.user && (sess.user.name || sess.user.email)) || '微信登录账号';
+    const added = store.addAccount(name, sess.cookie);
+    store.setActive(added.id);
+    const acc = store.getAccount(added.id);
     sess.cookie = ''; // 防止重复写盘
-    data.masked = maskCookie(cookie);
+    data.masked = store.mask(acc.cookie);
     data.user = sess.user;
+    data.account_id = added.id;
     data.saved = true;
     LOGIN_SESSIONS.delete(sid);
   }
 
   sendJson(res, 200, data);
 }
+
+// --------------------------------------------------------------------------- //
+// 状态查询 / 签到
+// --------------------------------------------------------------------------- //
 
 /** POST /api/status —— 只检查，不签到 */
 async function apiStatus(req, res) {
@@ -184,13 +273,18 @@ async function apiStatus(req, res) {
   const result = { ok: false };
 
   try {
-    const cookie = ensureCookie(resolveCookie(body.cookie));
+    const id = resolveAccountId(body.account_id);
+    const cookie = store.getCookie(id);
+    if (!cookie) throw new Error('该账号尚未配置 Cookie，请先扫码登录或手动填写');
+
     const client = new MonkeyCodeClient(cookie);
 
     // 1) 登录态
     logs.push(line('info', 'GET /api/v1/users/status  校验登录态 ...'));
     const user = await client.getUserStatus();
     result.user = user;
+    result.account_id = id;
+    store.setUser(id, user);
     logs.push(line('ok', `登录态有效，用户：${user.name || user.email || user.id || '未知'}`));
 
     // 2) 今日签到状态
@@ -222,13 +316,18 @@ async function apiCheckin(req, res) {
   const result = { ok: false };
 
   try {
-    const cookie = ensureCookie(resolveCookie(body.cookie));
+    const id = resolveAccountId(body.account_id);
+    const cookie = store.getCookie(id);
+    if (!cookie) throw new Error('该账号尚未配置 Cookie，请先扫码登录或手动填写');
+
     const client = new MonkeyCodeClient(cookie);
+    result.account_id = id;
 
     // 1) 登录态
     logs.push(line('info', 'GET /api/v1/users/status  校验登录态 ...'));
     const user = await client.getUserStatus();
     result.user = user;
+    store.setUser(id, user);
     logs.push(line('ok', `登录态有效，用户：${user.name || user.email || user.id || '未知'}`));
 
     // 2) 是否已签到
@@ -237,6 +336,7 @@ async function apiCheckin(req, res) {
     if (status.checked_in) {
       result.checked_in = true;
       result.ok = true;
+      store.markCheckedIn(id, { user, checkedIn: true });
       logs.push(line('ok', '今日已签到，无需重复操作'));
       try {
         result.balance = (await client.getWallet()).balance;
@@ -270,6 +370,7 @@ async function apiCheckin(req, res) {
     logs.push(line('info', 'POST /api/v1/users/wallet/checkin  提交签到 ...'));
     const checkedIn = await client.doCheckin(captchaToken);
     result.checked_in = checkedIn;
+    store.markCheckedIn(id, { user, checkedIn });
     if (!checkedIn) {
       logs.push(line('error', '签到未成功（服务端返回 checked_in=false）'));
       return sendJson(res, 200, { ...result, logs });
@@ -289,6 +390,80 @@ async function apiCheckin(req, res) {
   }
 
   sendJson(res, 200, { ...result, logs });
+}
+
+/**
+ * 对所有已保存账号执行签到。
+ * @param {(msg:string, level?:string)=>void} [log]
+ * @returns {Promise<object[]>} 每个账号的结果
+ */
+async function runAllCheckins(log = () => {}) {
+  const accounts = store.listAccounts();
+  const results = [];
+  for (const a of accounts) {
+    const cookie = store.getCookie(a.id);
+    if (!cookie) {
+      results.push({ id: a.id, name: a.name, ok: false, message: '未配置 Cookie' });
+      continue;
+    }
+    try {
+      const client = new MonkeyCodeClient(cookie);
+      const r = await client.checkin((msg, level) => log(`[${a.name}] ${msg}`, level));
+      store.markCheckedIn(a.id, { user: r.user, checkedIn: r.checkedIn });
+      results.push({
+        id: a.id,
+        name: a.name,
+        ok: r.ok,
+        checked_in: r.checkedIn,
+        balance: r.balance,
+      });
+    } catch (e) {
+      store.markCheckedIn(a.id, { checkedIn: false });
+      log(`[${a.name}] 签到失败：${e.message}`, 'error');
+      results.push({ id: a.id, name: a.name, ok: false, message: e.message });
+    }
+  }
+  return results;
+}
+
+/** POST /api/checkin_all —— 所有账号签到 */
+async function apiCheckinAll(req, res) {
+  const logs = [];
+  try {
+    const results = await runAllCheckins((msg, level) => logs.push(line(level || 'info', msg)));
+    sendJson(res, 200, { ok: true, results, logs });
+  } catch (e) {
+    logs.push(line('error', e.message));
+    sendJson(res, 200, { ok: false, results: [], logs });
+  }
+}
+
+// --------------------------------------------------------------------------- //
+// 定时签到配置
+// --------------------------------------------------------------------------- //
+
+/** GET /api/schedule */
+function apiScheduleGet(res) {
+  const s = store.getSchedule();
+  sendJson(res, 200, {
+    ok: true,
+    enabled: s.enabled,
+    time: s.time,
+    next_run: scheduler.getNextRun(),
+  });
+}
+
+/** POST /api/schedule */
+async function apiScheduleSet(req, res) {
+  const body = await readJsonBody(req);
+  const s = store.setSchedule(Boolean(body.enabled), body.time);
+  scheduler.reload();
+  sendJson(res, 200, {
+    ok: true,
+    enabled: s.enabled,
+    time: s.time,
+    next_run: scheduler.getNextRun(),
+  });
 }
 
 // --------------------------------------------------------------------------- //
@@ -325,6 +500,10 @@ async function apiUpdateApply(req, res) {
 
   sendJson(res, 200, { ...result, logs });
 }
+
+// --------------------------------------------------------------------------- //
+// 静态页面
+// --------------------------------------------------------------------------- //
 
 /** 返回前端页面。开发时实时读盘，避免改完页面还要重启服务 */
 function serveIndex(res) {
@@ -376,12 +555,22 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && pathname === '/') return serveIndex(res);
+    if (req.method === 'GET' && pathname === '/api/panel') return apiPanelInfo(res);
+    if (req.method === 'POST' && pathname === '/api/panel/update') return await apiPanelUpdate(req, res);
     if (req.method === 'GET' && pathname === '/api/cookie') return apiCookie(res);
     if (req.method === 'POST' && pathname === '/api/save_cookie') return await apiSaveCookie(req, res);
+    if (req.method === 'GET' && pathname === '/api/accounts') return apiAccountsList(res);
+    if (req.method === 'POST' && pathname === '/api/accounts/add') return await apiAccountAdd(req, res);
+    if (req.method === 'POST' && pathname === '/api/accounts/update') return await apiAccountUpdate(req, res);
+    if (req.method === 'POST' && pathname === '/api/accounts/delete') return await apiAccountDelete(req, res);
+    if (req.method === 'POST' && pathname === '/api/accounts/active') return await apiAccountActive(req, res);
     if (req.method === 'POST' && pathname === '/api/qr_login/start') return await apiQrStart(res);
     if (req.method === 'GET' && pathname === '/api/qr_login/poll') return apiQrPoll(url, res);
     if (req.method === 'POST' && pathname === '/api/status') return await apiStatus(req, res);
     if (req.method === 'POST' && pathname === '/api/checkin') return await apiCheckin(req, res);
+    if (req.method === 'POST' && pathname === '/api/checkin_all') return await apiCheckinAll(req, res);
+    if (req.method === 'GET' && pathname === '/api/schedule') return apiScheduleGet(res);
+    if (req.method === 'POST' && pathname === '/api/schedule') return await apiScheduleSet(req, res);
     if (req.method === 'GET' && pathname === '/api/update/check') return await apiUpdateCheck(res);
     if (req.method === 'POST' && pathname === '/api/update/apply') return await apiUpdateApply(req, res);
 
@@ -399,10 +588,20 @@ server.listen(PORT, HOST, () => {
   console.log(`配置文件：${CONFIG_PATH}`);
   if (auth.generatedPassword) {
     console.log('────────────────────────────────────────────');
-    console.log(`已生成面板访问密码：${auth.generatedPassword}`);
-    console.log(`（已保存到 ${auth.AUTH_PATH}，可用 PANEL_PASSWORD 环境变量覆盖）`);
+    console.log(`已生成面板登录账号：${auth.getUsername()} / ${auth.generatedPassword}`);
+    console.log(`（已保存到 ${auth.AUTH_PATH}，可用 PANEL_USERNAME / PANEL_PASSWORD 环境变量覆盖）`);
     console.log('────────────────────────────────────────────');
   }
+});
+
+// 启动进程内定时签到调度器
+scheduler.init(async () => {
+  console.log(`[scheduler] ${now()} 触发定时签到`);
+  const results = await runAllCheckins((msg, level) => {
+    const tag = { info: 'INFO', ok: ' OK ', warn: 'WARN', error: 'FAIL' }[level] || 'INFO';
+    console.log(`[scheduler] [${tag}] ${msg}`);
+  });
+  console.log(`[scheduler] 完成，共 ${results.length} 个账号`);
 });
 
 // 优雅退出，便于 systemd / 宝塔管理进程

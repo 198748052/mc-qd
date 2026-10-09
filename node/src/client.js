@@ -142,7 +142,7 @@ class MonkeyCodeClient {
     if (status.checked_in) {
       log('今日已签到，无需重复操作', 'ok');
       const wallet = await this.getWallet();
-      return { ok: true, already: true, checkedIn: true, balance: wallet.balance };
+      return { ok: true, already: true, checkedIn: true, balance: wallet.balance, user };
     }
 
     // 3) 取验证挑战
@@ -174,7 +174,7 @@ class MonkeyCodeClient {
       /* 余额查询失败不影响签到结果 */
     }
     log(`签到成功！当前余额：${balance}`, 'ok');
-    return { ok: true, already: false, checkedIn: true, balance, captchaToken };
+    return { ok: true, already: false, checkedIn: true, balance, captchaToken, user };
   }
 }
 

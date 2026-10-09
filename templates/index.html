@@ -10,13 +10,13 @@
 <style>
   /* ===================== 设计变量 ===================== */
   :root {
-    --bg:        #0b0d0a;   /* 背景近黑，带一点墨绿 */
-    --panel:     #12150e;   /* 面板底色 */
-    --panel-2:   #171b12;   /* 次级面板 */
-    --line:      #262d1c;   /* 描边 */
-    --text:      #e9edd9;   /* 主文字 */
-    --muted:     #808c6d;   /* 次要文字 */
-    --accent:    #f2e01f;   /* 香蕉黄（主强调色） */
+    --bg:        #0b0d0a;
+    --panel:     #12150e;
+    --panel-2:   #171b12;
+    --line:      #262d1c;
+    --text:      #e9edd9;
+    --muted:     #808c6d;
+    --accent:    #f2e01f;
     --accent-dim:#8a8318;
     --ok:        #8ce07a;
     --warn:      #f5c542;
@@ -26,7 +26,6 @@
   }
 
   * { box-sizing: border-box; }
-
   html, body { height: 100%; }
 
   body {
@@ -37,14 +36,12 @@
     font-size: 14px;
     line-height: 1.6;
     overflow-x: hidden;
-    /* 顶部一层香蕉黄光晕，制造纵深 */
     background-image:
       radial-gradient(900px 500px at 82% -10%, rgba(242,224,31,.10), transparent 60%),
       radial-gradient(700px 420px at -5% 110%, rgba(140,224,122,.06), transparent 60%);
     background-attachment: fixed;
   }
 
-  /* 细微噪点纹理，避免纯色背景的塑料感 */
   body::before {
     content: "";
     position: fixed; inset: 0;
@@ -61,7 +58,6 @@
     padding: 40px 24px 64px;
   }
 
-  /* 入场动画：逐个淡入上浮 */
   .reveal {
     opacity: 0;
     transform: translateY(14px);
@@ -69,7 +65,7 @@
   }
   @keyframes rise { to { opacity: 1; transform: none; } }
 
-  header { margin-bottom: 26px; }
+  header { margin-bottom: 22px; }
 
   .topline { display: flex; align-items: center; gap: 14px; }
   .topline .eyebrow { flex: 1; }
@@ -111,10 +107,34 @@
 
   .sub { color: var(--muted); margin: 0; max-width: 62ch; }
 
-  /* 顶部状态徽章行 */
+  /* ===================== 标签页 ===================== */
+  .tabs {
+    display: flex; gap: 6px;
+    margin: 22px 0 22px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .tab {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12.5px; letter-spacing: .08em;
+    padding: 10px 14px;
+    cursor: pointer;
+    border-radius: 8px 8px 0 0;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .tab:hover { color: var(--text); background: var(--panel); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabpane[hidden] { display: none; }
+
+  /* ===================== 徽章 ===================== */
   .badges {
     display: flex; flex-wrap: wrap; gap: 12px;
-    margin: 22px 0 30px;
+    margin: 0 0 20px;
   }
   .badge {
     flex: 1 1 190px;
@@ -125,7 +145,7 @@
     position: relative;
     overflow: hidden;
   }
-  .badge::after {            /* 左侧一条强调色竖线 */
+  .badge::after {
     content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
     background: var(--line);
     transition: background .3s;
@@ -141,13 +161,14 @@
   .badge .v.warn { color: var(--warn); }
   .badge .v.muted{ color: var(--muted); font-weight: 400; font-size: 15px; }
 
-  /* 主体两栏：左控制台 / 右终端 */
+  /* ===================== 栅格 / 卡片 ===================== */
   .grid {
     display: grid;
     grid-template-columns: 400px 1fr;
     gap: 20px;
     align-items: start;
   }
+  .grid-single { display: grid; grid-template-columns: 1fr; gap: 20px; align-items: start; }
 
   .card {
     background: var(--panel);
@@ -166,14 +187,16 @@
     width: 7px; height: 7px; border-radius: 50%;
     background: var(--accent); box-shadow: 0 0 10px var(--accent);
   }
+  .card h2 .spacer { flex: 1; }
 
   label.field {
     display: block;
     font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
     color: var(--muted); margin: 18px 0 8px;
   }
+  label.field:first-of-type { margin-top: 12px; }
 
-  textarea, input[type=text] {
+  textarea, input[type=text], input[type=password], input[type=time], select {
     width: 100%;
     background: #0a0c07;
     border: 1px solid var(--line);
@@ -182,20 +205,20 @@
     font-family: var(--mono);
     font-size: 12.5px;
     padding: 12px 14px;
-    resize: vertical;
-    min-height: 84px;
     outline: none;
     transition: border-color .2s, box-shadow .2s;
   }
-  textarea:focus, input:focus {
+  textarea { resize: vertical; min-height: 84px; }
+  textarea:focus, input:focus, select:focus {
     border-color: var(--accent-dim);
     box-shadow: 0 0 0 3px rgba(242,224,31,.09);
   }
+  select { appearance: none; cursor: pointer; }
 
   .hint { font-size: 11.5px; color: var(--muted); margin: 8px 0 0; }
   .hint code { color: var(--accent); }
 
-  /* ---------- 扫码登录区 ---------- */
+  /* ===================== 扫码登录 ===================== */
   .divider {
     display: flex; align-items: center; gap: 12px;
     margin: 22px 0 6px;
@@ -208,12 +231,11 @@
 
   .qr-panel { margin-top: 14px; }
   .qr-panel[hidden] { display: none; }
-
   .qr-frame {
     position: relative;
     display: flex; justify-content: center;
     padding: 14px;
-    background: #fff;              /* 二维码需白底才能被扫码 */
+    background: #fff;
     border: 1px solid var(--line);
     border-radius: 12px;
     min-height: 150px;
@@ -242,8 +264,10 @@
   .qr-status.err  .dot2 { background: var(--error); }
   @keyframes pulse { 50% { opacity: .22; } }
 
-  /* 按钮 */
+  /* ===================== 按钮 ===================== */
   .btns { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+  .btns.row { flex-direction: row; flex-wrap: wrap; }
+  .btns.row > button { flex: 1 1 140px; }
 
   button {
     font-family: var(--mono);
@@ -267,12 +291,16 @@
     border-color: var(--accent);
     box-shadow: 0 6px 22px -8px var(--accent);
   }
-  button.primary:hover {
-    background: #fff04a;
-    box-shadow: 0 10px 30px -8px var(--accent);
-  }
+  button.primary:hover { background: #fff04a; box-shadow: 0 10px 30px -8px var(--accent); }
 
-  /* 终端窗口 */
+  button.mini {
+    font-size: 11px; padding: 7px 12px; border-radius: 8px;
+    font-weight: 500; letter-spacing: .04em;
+  }
+  button.mini.danger:hover { color: var(--error); border-color: var(--error); }
+  button.mini.on { color: var(--ok); border-color: var(--ok); }
+
+  /* ===================== 终端 ===================== */
   .terminal { display: flex; flex-direction: column; min-height: 460px; }
 
   .term-bar {
@@ -298,11 +326,7 @@
     max-height: 520px;
     padding-right: 6px;
   }
-  #log .line {
-    display: flex; gap: 10px;
-    padding: 3px 0;
-    animation: pop .25s ease-out;
-  }
+  #log .line { display: flex; gap: 10px; padding: 3px 0; animation: pop .25s ease-out; }
   @keyframes pop { from { opacity: 0; transform: translateX(-6px); } }
   #log .t { color: #55603f; flex: none; }
   #log .lv { flex: none; width: 46px; font-weight: 700; }
@@ -312,7 +336,6 @@
   .lv-warn  { color: var(--warn); }
   .lv-error { color: var(--error); }
 
-  /* 终端光标 */
   .cursor {
     display: inline-block; width: 8px; height: 15px;
     background: var(--accent); vertical-align: -2px;
@@ -322,7 +345,51 @@
 
   .placeholder { color: #55603f; }
 
-  /* toast 提示 */
+  /* ===================== 账号列表 ===================== */
+  .acct-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .acct {
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--panel-2);
+    padding: 13px 15px;
+    display: flex; align-items: center; gap: 14px;
+    transition: border-color .2s;
+  }
+  .acct.active { border-color: var(--accent-dim); }
+  .acct .info { flex: 1; min-width: 0; }
+  .acct .name { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .acct .name .pill {
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: #15170a; background: var(--accent);
+    padding: 1px 7px; border-radius: 999px; font-weight: 700;
+  }
+  .acct .meta {
+    font-size: 11.5px; color: var(--muted);
+    margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .acct .actions { display: flex; gap: 6px; flex: none; }
+  .empty {
+    border: 1px dashed var(--line); border-radius: 11px;
+    padding: 22px; text-align: center; color: var(--muted); font-size: 12.5px;
+  }
+
+  /* 开关 */
+  .switch-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .switch { position: relative; display: inline-block; width: 46px; height: 26px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: #2a3120; border: 1px solid var(--line);
+    border-radius: 999px; transition: .25s;
+  }
+  .switch .slider::before {
+    content: ""; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px;
+    background: var(--muted); border-radius: 50%; transition: .25s;
+  }
+  .switch input:checked + .slider { background: var(--accent-dim); border-color: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(20px); background: var(--accent); }
+
+  /* toast */
   #toast {
     position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px);
     background: var(--accent); color: #15170a;
@@ -332,6 +399,7 @@
     transition: opacity .25s, transform .25s;
     box-shadow: 0 10px 34px -10px var(--accent);
     z-index: 1000;
+    max-width: 90vw; text-align: center;
   }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
@@ -351,330 +419,567 @@
       <button id="btn-logout" class="logout">退出登录</button>
     </div>
     <h1>签到<span class="hl">终端</span></h1>
-    <p class="sub">本地测试页：填入会话 Cookie 后即可一键完成 MonkeyCode 的每日签到（含人机验证 PoW 求解）。</p>
+    <p class="sub">管理多个 MonkeyCode 账号、一键签到、并设置每日自动签到时间。当前登录：<span id="panel-user" class="hl">—</span></p>
   </header>
 
-  <!-- ============ 状态徽章 ============ -->
-  <section class="badges reveal" style="animation-delay:.10s">
-    <div class="badge" id="b-user">
-      <span class="k">当前用户</span>
-      <span class="v muted" id="v-user">—</span>
-    </div>
-    <div class="badge" id="b-checkin">
-      <span class="k">今日签到</span>
-      <span class="v muted" id="v-checkin">未检测</span>
-    </div>
-    <div class="badge" id="b-balance">
-      <span class="k">钱包余额</span>
-      <span class="v muted" id="v-balance">—</span>
+  <!-- ============ 标签页 ============ -->
+  <nav class="tabs reveal" style="animation-delay:.08s">
+    <button class="tab active" data-tab="checkin">签到</button>
+    <button class="tab" data-tab="accounts">账号管理</button>
+    <button class="tab" data-tab="settings">系统设置</button>
+  </nav>
+
+  <!-- ================= 签到 ================= -->
+  <section class="tabpane" id="pane-checkin">
+    <section class="badges reveal" style="animation-delay:.10s">
+      <div class="badge" id="b-user">
+        <span class="k">当前用户</span>
+        <span class="v muted" id="v-user">—</span>
+      </div>
+      <div class="badge" id="b-checkin">
+        <span class="k">今日签到</span>
+        <span class="v muted" id="v-checkin">未检测</span>
+      </div>
+      <div class="badge" id="b-balance">
+        <span class="k">钱包余额</span>
+        <span class="v muted" id="v-balance">—</span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <!-- 左：控制台 -->
+      <section class="card reveal" style="animation-delay:.16s">
+        <h2><span class="dot"></span>签到控制</h2>
+
+        <label class="field" for="account-select">选择账号</label>
+        <select id="account-select"></select>
+        <p class="hint" id="acct-hint">尚未保存任何账号，请到「账号管理」添加或扫码登录。</p>
+
+        <div class="btns">
+          <button id="btn-status">检测登录状态</button>
+          <button id="btn-checkin" class="primary">▶ 执行签到</button>
+          <button id="btn-checkin-all">为所有账号签到</button>
+        </div>
+
+        <div class="divider">或扫码登录新账号</div>
+        <button id="btn-qr" style="width:100%">微信扫码登录（自动获取）</button>
+        <div class="qr-panel" id="qr-panel" hidden>
+          <div class="qr-frame">
+            <img id="qr-img" alt="微信登录二维码">
+            <div class="mask" id="qr-mask" hidden></div>
+          </div>
+          <div class="qr-status" id="qr-status">
+            <span class="dot2"></span><span id="qr-status-text">正在初始化 ...</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右：终端 -->
+      <section class="card terminal reveal" style="animation-delay:.22s">
+        <div class="term-bar">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <span class="title">checkin@monkeycode — output</span>
+          <span class="clock" id="clock">--:--:--</span>
+        </div>
+        <div id="log">
+          <div class="line"><span class="t">[就绪]</span><span class="msg placeholder">等待操作 ... <span class="cursor"></span></span></div>
+        </div>
+      </section>
     </div>
   </section>
 
-  <!-- ============ 主体 ============ -->
-  <div class="grid">
-
-    <!-- 左：控制面板 -->
-    <section class="card reveal" style="animation-delay:.18s">
-      <h2><span class="dot"></span>会话凭证</h2>
-
-      <!-- 自动获取：微信扫码登录，全程在服务端完成 -->
-      <button id="btn-qr" style="margin-top:16px;width:100%">微信扫码登录（自动获取）</button>
-      <div class="qr-panel" id="qr-panel" hidden>
-        <div class="qr-frame">
-          <img id="qr-img" alt="微信登录二维码">
-          <div class="mask" id="qr-mask" hidden></div>
+  <!-- ================= 账号管理 ================= -->
+  <section class="tabpane" id="pane-accounts" hidden>
+    <div class="grid">
+      <section class="card reveal" style="animation-delay:.10s">
+        <h2><span class="dot"></span>添加账号</h2>
+        <label class="field" for="new-name">账号备注名</label>
+        <input type="text" id="new-name" placeholder="例如：主号 / 小号A" spellcheck="false">
+        <label class="field" for="new-cookie">Cookie / Session</label>
+        <textarea id="new-cookie" placeholder="monkeycode_ai_session=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" spellcheck="false"></textarea>
+        <p class="hint">从浏览器 F12 → Application → Cookies → <code>monkeycode_ai_session</code> 复制。</p>
+        <div class="btns">
+          <button id="btn-add-acct" class="primary">保存账号</button>
         </div>
-        <div class="qr-status" id="qr-status">
-          <span class="dot2"></span><span id="qr-status-text">正在初始化 ...</span>
+        <div class="divider">或</div>
+        <button id="btn-qr2" style="width:100%">微信扫码登录并保存</button>
+        <div class="qr-panel" id="qr-panel2" hidden>
+          <div class="qr-frame">
+            <img id="qr-img2" alt="微信登录二维码">
+            <div class="mask" id="qr-mask2" hidden></div>
+          </div>
+          <div class="qr-status" id="qr-status2">
+            <span class="dot2"></span><span id="qr-status-text2">正在初始化 ...</span>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="divider">或手动填写</div>
+      <section class="card reveal" style="animation-delay:.16s">
+        <h2><span class="dot"></span>已保存账号 <span class="spacer"></span>
+          <button class="mini" id="btn-reload-accts">刷新</button>
+        </h2>
+        <div class="acct-list" id="acct-list"></div>
+      </section>
+    </div>
+  </section>
 
-      <label class="field" for="cookie">Cookie / Session</label>
-      <textarea id="cookie" placeholder="monkeycode_ai_session=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" spellcheck="false"></textarea>
-      <p class="hint">
-        从浏览器 F12 → Application → Cookies → <code>monkeycode_ai_session</code> 复制。
-        保存后写入服务端的 <code>config.json</code>，供签到复用。
-      </p>
+  <!-- ================= 系统设置 ================= -->
+  <section class="tabpane" id="pane-settings" hidden>
+    <div class="grid">
+      <section class="card reveal" style="animation-delay:.10s">
+        <h2><span class="dot"></span>定时签到</h2>
+        <p class="hint" style="margin-top:6px">开启后，服务会在每天指定时间自动为所有账号签到。</p>
+        <div class="switch-row">
+          <label class="switch">
+            <input type="checkbox" id="sched-enabled">
+            <span class="slider"></span>
+          </label>
+          <span id="sched-enabled-text" style="font-size:12.5px;color:var(--muted)">未开启</span>
+        </div>
+        <label class="field" for="sched-time">签到时间</label>
+        <input type="time" id="sched-time" value="08:00">
+        <p class="hint" id="sched-next"></p>
+        <div class="btns">
+          <button id="btn-save-sched" class="primary">保存定时设置</button>
+        </div>
+      </section>
 
-      <div class="btns">
-        <button id="btn-save">保存 Cookie</button>
-        <button id="btn-status">检测登录状态</button>
-        <button id="btn-checkin" class="primary">▶ 执行签到</button>
-      </div>
+      <section class="card reveal" style="animation-delay:.16s">
+        <h2><span class="dot"></span>面板账号</h2>
+        <label class="field" for="panel-username">用户名</label>
+        <input type="text" id="panel-username" spellcheck="false">
+        <label class="field" for="panel-current">当前密码</label>
+        <input type="password" id="panel-current" placeholder="修改时必填" autocomplete="current-password">
+        <label class="field" for="panel-new">新密码</label>
+        <input type="password" id="panel-new" placeholder="留空则不修改" autocomplete="new-password">
+        <p class="hint">修改密码后，其它已登录的会话将失效。</p>
+        <div class="btns">
+          <button id="btn-save-panel" class="primary">保存账号设置</button>
+        </div>
 
-      <div class="divider">系统更新</div>
-      <div class="qr-status" id="upd-status">
-        <span class="dot2"></span><span id="upd-text">未检查</span>
-      </div>
-      <p class="hint" id="upd-detail"></p>
-      <div class="btns">
-        <button id="btn-upd-check">检查更新</button>
-        <button id="btn-upd-apply" class="primary" disabled>一键更新并重启</button>
-      </div>
-    </section>
+        <div class="divider">系统更新</div>
+        <div class="qr-status" id="upd-status">
+          <span class="dot2"></span><span id="upd-text">未检查</span>
+        </div>
+        <p class="hint" id="upd-detail"></p>
+        <div class="btns">
+          <button id="btn-upd-check">检查更新</button>
+          <button id="btn-upd-apply" class="primary" disabled>一键更新并重启</button>
+        </div>
+      </section>
+    </div>
+  </section>
 
-    <!-- 右：终端输出 -->
-    <section class="card terminal reveal" style="animation-delay:.26s">
-      <div class="term-bar">
-        <div class="lights"><i></i><i></i><i></i></div>
-        <span class="title">checkin@monkeycode — output</span>
-        <span class="clock" id="clock">--:--:--</span>
-      </div>
-      <div id="log">
-        <div class="line"><span class="t">[就绪]</span><span class="msg placeholder">等待操作 ... <span class="cursor"></span></span></div>
-      </div>
-    </section>
-
-  </div>
 </div>
 
 <div id="toast"></div>
 
 <script>
-/* ===================== 元素引用 ===================== */
-const el = {
-  cookie:  document.getElementById('cookie'),
-  log:     document.getElementById('log'),
-  clock:   document.getElementById('clock'),
-  toast:   document.getElementById('toast'),
-  save:    document.getElementById('btn-save'),
-  status:  document.getElementById('btn-status'),
-  checkin: document.getElementById('btn-checkin'),
-};
-
 /* ===================== 通用工具 ===================== */
+const $ = (id) => document.getElementById(id);
+
 // 顶部时钟
-function tick() {
-  el.clock.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-}
+function tick() { $('clock').textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
 tick(); setInterval(tick, 1000);
 
-// 轻提示
+function now() { return new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
 let toastTimer = null;
 function toast(msg) {
-  el.toast.textContent = msg;
-  el.toast.classList.add('show');
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.toast.classList.remove('show'), 2000);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-// 清空终端
-function clearLog() { el.log.innerHTML = ''; }
-
-// 追加一行日志 {t, level, msg}
-function appendLine(item) {
-  const map = { info: 'INFO', ok: ' OK ', warn: 'WARN', error: 'FAIL' };
-  const row = document.createElement('div');
-  row.className = 'line';
-  row.innerHTML =
-    `<span class="t">[${item.t || ''}]</span>` +
-    `<span class="lv lv-${item.level}">${map[item.level] || 'INFO'}</span>` +
-    `<span class="msg"></span>`;
-  row.querySelector('.msg').textContent = item.msg;
-  el.log.appendChild(row);
-  el.log.scrollTop = el.log.scrollHeight;   // 自动滚到底部
-}
-
-// 正在运行提示（带光标）
-function appendBusy(text) {
-  const row = document.createElement('div');
-  row.className = 'line';
-  row.innerHTML = `<span class="t">[...]</span><span class="msg placeholder">${text} <span class="cursor"></span></span>`;
-  el.log.appendChild(row);
-  el.log.scrollTop = el.log.scrollHeight;
-  return row;
-}
-
-// 更新徽章
-function setBadges(data) {
-  if (data.user !== undefined && data.user !== null) {
-    const u = data.user;
-    document.getElementById('v-user').textContent = u.name ? `${u.name}` : (u.id || '已登录');
-    document.getElementById('v-user').className = 'v';
-    document.getElementById('b-user').className = 'badge ok';
-  }
-  if (data.checked_in !== undefined && data.checked_in !== null) {
-    const done = data.checked_in;
-    document.getElementById('v-checkin').textContent = done ? '已签到' : '未签到';
-    document.getElementById('v-checkin').className = 'v ' + (done ? 'ok' : 'warn');
-    document.getElementById('b-checkin').className = 'badge ' + (done ? 'ok' : 'warn');
-  }
-  if (data.balance !== undefined && data.balance !== null) {
-    document.getElementById('v-balance').textContent = Number(data.balance).toLocaleString();
-    document.getElementById('v-balance').className = 'v';
-    document.getElementById('b-balance').className = 'badge ok';
-  }
-}
-
-// 统一请求封装
+// 统一请求封装（401 自动跳登录页）
 async function post(url, body) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body || {}),
   });
-  // 会话过期：跳回登录页
   if (res.status === 401) {
     const data = await res.json().catch(() => ({}));
-    if (data.need_login) { location.href = '/login'; }
+    if (data.need_login) location.href = '/login';
+    return data;
+  }
+  return res.json();
+}
+async function getJson(url) {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (res.status === 401) {
+    const data = await res.json().catch(() => ({}));
+    if (data.need_login) location.href = '/login';
     return data;
   }
   return res.json();
 }
 
-// 按钮禁用态
-function setBusy(busy) {
-  [el.save, el.status, el.checkin].forEach(b => b.disabled = busy);
+/* ===================== 终端 ===================== */
+const logEl = $('log');
+function clearLog() { logEl.innerHTML = ''; }
+function appendLine(item) {
+  const map = { info: 'INFO', ok: ' OK ', warn: 'WARN', error: 'FAIL' };
+  const row = document.createElement('div');
+  row.className = 'line';
+  row.innerHTML =
+    `<span class="t">[${esc(item.t || '')}]</span>` +
+    `<span class="lv lv-${esc(item.level)}">${map[item.level] || 'INFO'}</span>` +
+    `<span class="msg"></span>`;
+  row.querySelector('.msg').textContent = item.msg;
+  logEl.appendChild(row);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function appendBusy(text) {
+  const row = document.createElement('div');
+  row.className = 'line';
+  row.innerHTML = `<span class="t">[...]</span><span class="msg placeholder">${esc(text)} <span class="cursor"></span></span>`;
+  logEl.appendChild(row);
+  logEl.scrollTop = logEl.scrollHeight;
+  return row;
 }
 
-/* ===================== 微信扫码登录 ===================== */
-let qrTimer = null;
-
-// 停止轮询
-function stopQrPolling() {
-  if (qrTimer) { clearInterval(qrTimer); qrTimer = null; }
-}
-
-// 更新二维码下方的状态文案与指示灯
-function setQrStatus(text, kind) {
-  document.getElementById('qr-status').className = 'qr-status' + (kind ? ' ' + kind : '');
-  document.getElementById('qr-status-text').textContent = text;
-}
-
-// 发起扫码登录
-document.getElementById('btn-qr').addEventListener('click', async () => {
-  const btn = document.getElementById('btn-qr');
-  const img = document.getElementById('qr-img');
-  const mask = document.getElementById('qr-mask');
-
-  stopQrPolling();
-  btn.disabled = true;
-  document.getElementById('qr-panel').hidden = false;
-  mask.hidden = true;
-  img.removeAttribute('src');
-  setQrStatus('正在获取二维码 ...', 'wait');
-
-  try {
-    const r = await post('/api/qr_login/start');
-    if (r.qr) img.src = r.qr;
-    setQrStatus(r.message || '请用微信扫描二维码', 'wait');
-    btn.disabled = false;
-    // 服务端在后台长轮询扫码状态，前端每 1.5s 同步一次结果
-    qrTimer = setInterval(() => pollQr(r.sid), 1500);
-  } catch (e) {
-    setQrStatus('获取二维码失败：' + e.message, 'err');
-    btn.disabled = false;
-  }
+/* ===================== 标签页切换 ===================== */
+document.querySelectorAll('.tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tabpane').forEach((p) => {
+      p.hidden = p.id !== 'pane-' + btn.dataset.tab;
+    });
+  });
 });
 
-// 轮询扫码状态
-async function pollQr(sid) {
-  let r;
-  try {
-    r = await fetch('/api/qr_login/poll?sid=' + encodeURIComponent(sid)).then(x => x.json());
-  } catch (e) {
-    return;   // 网络抖动忽略，下一轮继续
+/* ===================== 徽章 ===================== */
+function setBadges(data) {
+  if (data.user !== undefined && data.user !== null) {
+    const u = data.user;
+    $('v-user').textContent = u.name ? `${u.name}` : (u.id || '已登录');
+    $('v-user').className = 'v';
+    $('b-user').className = 'badge ok';
   }
-
-  const img = document.getElementById('qr-img');
-  const mask = document.getElementById('qr-mask');
-
-  // 二维码可能已被服务端自动刷新
-  if (r.qr && img.src !== r.qr) img.src = r.qr;
-
-  const kind = r.status === 'confirmed' ? 'ok' : (r.status === 'error' ? 'err' : 'wait');
-  setQrStatus(r.message || '', kind);
-
-  if (r.status === 'confirmed') {
-    stopQrPolling();
-    mask.hidden = false;
-    mask.textContent = '已登录 ✓';
-    if (r.masked) appendLine({ t: now(), level: 'ok', msg: '已自动获取并保存 Cookie：' + r.masked });
-    toast('登录成功，Cookie 已保存');
-    // 顺带刷新一次登录状态徽章
-    setTimeout(() => el.status.click(), 400);
-  } else if (r.status === 'error') {
-    stopQrPolling();
+  if (data.checked_in !== undefined && data.checked_in !== null) {
+    const done = data.checked_in;
+    $('v-checkin').textContent = done ? '已签到' : '未签到';
+    $('v-checkin').className = 'v ' + (done ? 'ok' : 'warn');
+    $('b-checkin').className = 'badge ' + (done ? 'ok' : 'warn');
+  }
+  if (data.balance !== undefined && data.balance !== null) {
+    $('v-balance').textContent = Number(data.balance).toLocaleString();
+    $('v-balance').className = 'v';
+    $('b-balance').className = 'badge ok';
   }
 }
 
-/* ===================== 交互逻辑 ===================== */
-// 保存 Cookie
-el.save.addEventListener('click', async () => {
-  const v = el.cookie.value.trim();
-  if (!v) { toast('请先填写 Cookie'); return; }
-  setBusy(true);
-  try {
-    const r = await post('/api/save_cookie', { cookie: v });
-    toast(r.ok ? '已保存到 config.json' : (r.message || '保存失败'));
-    if (r.ok) { clearLog(); appendLine({ t: now(), level: 'ok', msg: 'Cookie 已保存：' + r.masked }); }
-  } catch (e) {
-    toast('请求失败：' + e.message);
-  } finally { setBusy(false); }
+/* ===================== 账号列表 ===================== */
+let accounts = [];
+let currentId = '';
+
+async function loadAccounts() {
+  const r = await getJson('/api/accounts');
+  accounts = (r && r.accounts) || [];
+  if (!accounts.some((a) => a.id === currentId)) {
+    currentId = (r && r.active_id) || (accounts[0] && accounts[0].id) || '';
+  }
+  renderAccountSelect();
+  renderAccountList();
+  return accounts;
+}
+
+function renderAccountSelect() {
+  const sel = $('account-select');
+  sel.innerHTML = '';
+  if (!accounts.length) {
+    const o = document.createElement('option');
+    o.value = ''; o.textContent = '（无账号）';
+    sel.appendChild(o);
+    sel.disabled = true;
+    $('acct-hint').textContent = '尚未保存任何账号，请到「账号管理」添加或扫码登录。';
+    return;
+  }
+  sel.disabled = false;
+  for (const a of accounts) {
+    const o = document.createElement('option');
+    o.value = a.id;
+    o.textContent = a.name + (a.active ? '  ★' : '');
+    sel.appendChild(o);
+  }
+  sel.value = currentId;
+  const cur = accounts.find((a) => a.id === currentId);
+  $('acct-hint').textContent = cur ? ('Cookie：' + (cur.masked || '（空）')) : '';
+}
+
+function fmtTime(ts) {
+  if (!ts) return '从未';
+  return new Date(ts * 1000).toLocaleString('zh-CN', { hour12: false });
+}
+
+function renderAccountList() {
+  const box = $('acct-list');
+  if (!accounts.length) {
+    box.innerHTML = '<div class="empty">还没有保存任何账号</div>';
+    return;
+  }
+  box.innerHTML = '';
+  for (const a of accounts) {
+    const user = a.user && (a.user.name || a.user.email || a.user.id);
+    const statusTxt = a.last_checked_in === true ? '已签到'
+      : a.last_checked_in === false ? '未签到' : '未检测';
+    const div = document.createElement('div');
+    div.className = 'acct' + (a.active ? ' active' : '');
+    div.innerHTML =
+      `<div class="info">` +
+        `<div class="name">${esc(a.name)}${a.active ? '<span class="pill">当前</span>' : ''}</div>` +
+        `<div class="meta">${esc(a.masked || '（无 Cookie）')} · ${esc(user || '未验证')} · ${statusTxt} · ${esc(fmtTime(a.last_checkin_at))}</div>` +
+      `</div>` +
+      `<div class="actions">` +
+        (a.active ? '' : `<button class="mini" data-act="active" data-id="${esc(a.id)}">启用</button>`) +
+        `<button class="mini" data-act="rename" data-id="${esc(a.id)}">重命名</button>` +
+        `<button class="mini" data-act="recookie" data-id="${esc(a.id)}">换 Cookie</button>` +
+        `<button class="mini danger" data-act="delete" data-id="${esc(a.id)}">删除</button>` +
+      `</div>`;
+    box.appendChild(div);
+  }
+  box.querySelectorAll('button[data-act]').forEach((b) => {
+    b.addEventListener('click', () => handleAccountAction(b.dataset.act, b.dataset.id));
+  });
+}
+
+async function handleAccountAction(act, id) {
+  const acc = accounts.find((a) => a.id === id);
+  if (!acc) return;
+  if (act === 'active') {
+    const r = await post('/api/accounts/active', { id });
+    if (r.ok) { currentId = id; toast('已切换账号'); await loadAccounts(); }
+    else toast(r.message || '切换失败');
+  } else if (act === 'rename') {
+    const name = prompt('新的账号备注名：', acc.name);
+    if (name === null) return;
+    const r = await post('/api/accounts/update', { id, name: name.trim() });
+    if (r.ok) { toast('已重命名'); await loadAccounts(); } else toast(r.message || '失败');
+  } else if (act === 'recookie') {
+    const cookie = prompt('粘贴新的 Cookie / Session：');
+    if (cookie === null) return;
+    if (!cookie.trim()) { toast('Cookie 不能为空'); return; }
+    const r = await post('/api/accounts/update', { id, cookie: cookie.trim() });
+    if (r.ok) { toast('已更新 Cookie'); await loadAccounts(); } else toast(r.message || '失败');
+  } else if (act === 'delete') {
+    if (!confirm(`确定删除账号「${acc.name}」吗？`)) return;
+    const r = await post('/api/accounts/delete', { id });
+    if (r.ok) { toast('已删除'); await loadAccounts(); } else toast(r.message || '失败');
+  }
+}
+
+$('account-select').addEventListener('change', (e) => { currentId = e.target.value; renderAccountSelect(); });
+$('btn-reload-accts').addEventListener('click', async () => { await loadAccounts(); toast('已刷新'); });
+
+// 添加账号
+$('btn-add-acct').addEventListener('click', async () => {
+  const name = $('new-name').value.trim();
+  const cookie = $('new-cookie').value.trim();
+  if (!cookie) { toast('请填写 Cookie'); return; }
+  const r = await post('/api/accounts/add', { name, cookie });
+  if (r.ok) {
+    toast('账号已保存');
+    $('new-name').value = '';
+    $('new-cookie').value = '';
+    currentId = r.id;
+    await loadAccounts();
+  } else toast(r.message || '保存失败');
 });
 
-// 检测状态（不签到）
-el.status.addEventListener('click', async () => {
-  setBusy(true); clearLog();
+/* ===================== 扫码登录 ===================== */
+function makeQrController(prefix) {
+  let timer = null;
+  const btn = $(prefix === '' ? 'btn-qr' : 'btn-qr2');
+  const panel = $(prefix === '' ? 'qr-panel' : 'qr-panel2');
+  const img = $(prefix === '' ? 'qr-img' : 'qr-img2');
+  const mask = $(prefix === '' ? 'qr-mask' : 'qr-mask2');
+  const statusEl = $(prefix === '' ? 'qr-status' : 'qr-status2');
+  const statusText = $(prefix === '' ? 'qr-status-text' : 'qr-status-text2');
+
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  function setStatus(text, kind) {
+    statusEl.className = 'qr-status' + (kind ? ' ' + kind : '');
+    statusText.textContent = text;
+  }
+
+  async function poll(sid) {
+    let r;
+    try { r = await getJson('/api/qr_login/poll?sid=' + encodeURIComponent(sid)); } catch (e) { return; }
+    if (r.qr && img.src !== r.qr) img.src = r.qr;
+    const kind = r.status === 'confirmed' ? 'ok' : (r.status === 'error' ? 'err' : 'wait');
+    setStatus(r.message || '', kind);
+    if (r.status === 'confirmed') {
+      stop();
+      mask.hidden = false; mask.textContent = '已登录 ✓';
+      toast('登录成功，账号已保存');
+      currentId = r.account_id || currentId;
+      await loadAccounts();
+    } else if (r.status === 'error') {
+      stop();
+    }
+  }
+
+  btn.addEventListener('click', async () => {
+    stop();
+    btn.disabled = true;
+    panel.hidden = false;
+    mask.hidden = true;
+    img.removeAttribute('src');
+    setStatus('正在获取二维码 ...', 'wait');
+    try {
+      const r = await post('/api/qr_login/start');
+      if (r.qr) img.src = r.qr;
+      setStatus(r.message || '请用微信扫描二维码', 'wait');
+      btn.disabled = false;
+      timer = setInterval(() => poll(r.sid), 1500);
+    } catch (e) {
+      setStatus('获取二维码失败：' + e.message, 'err');
+      btn.disabled = false;
+    }
+  });
+}
+makeQrController('');
+makeQrController('2');
+
+/* ===================== 检测 / 签到 ===================== */
+function setCheckinBusy(busy) {
+  ['btn-status', 'btn-checkin', 'btn-checkin-all'].forEach((id) => { $(id).disabled = busy; });
+}
+
+$('btn-status').addEventListener('click', async () => {
+  if (!currentId) { toast('请先添加账号'); return; }
+  setCheckinBusy(true); clearLog();
   const busy = appendBusy('正在检测登录状态 ...');
   try {
-    const r = await post('/api/status', { cookie: el.cookie.value.trim() });
+    const r = await post('/api/status', { account_id: currentId });
     busy.remove();
     (r.logs || []).forEach(appendLine);
     setBadges(r);
   } catch (e) {
     busy.remove(); appendLine({ t: now(), level: 'error', msg: '请求失败：' + e.message });
-  } finally { setBusy(false); }
+  } finally { setCheckinBusy(false); }
 });
 
-// 执行签到
-el.checkin.addEventListener('click', async () => {
-  setBusy(true); clearLog();
+$('btn-checkin').addEventListener('click', async () => {
+  if (!currentId) { toast('请先添加账号'); return; }
+  setCheckinBusy(true); clearLog();
   const busy = appendBusy('正在执行签到，求解工作量证明中 ...');
   try {
-    const r = await post('/api/checkin', { cookie: el.cookie.value.trim() });
+    const r = await post('/api/checkin', { account_id: currentId });
     busy.remove();
     (r.logs || []).forEach(appendLine);
     setBadges(r);
     toast(r.checked_in ? '签到完成 ✓' : '签到未完成');
+    await loadAccounts();
   } catch (e) {
     busy.remove(); appendLine({ t: now(), level: 'error', msg: '请求失败：' + e.message });
-  } finally { setBusy(false); }
+  } finally { setCheckinBusy(false); }
+});
+
+$('btn-checkin-all').addEventListener('click', async () => {
+  if (!accounts.length) { toast('请先添加账号'); return; }
+  setCheckinBusy(true); clearLog();
+  const busy = appendBusy('正在为所有账号执行签到 ...');
+  try {
+    const r = await post('/api/checkin_all', {});
+    busy.remove();
+    (r.logs || []).forEach(appendLine);
+    if (r.results && r.results.length) {
+      const okCount = r.results.filter((x) => x.ok).length;
+      appendLine({ t: now(), level: okCount === r.results.length ? 'ok' : 'warn',
+        msg: `完成：${okCount}/${r.results.length} 个账号签到成功` });
+    }
+    toast('全部签到完成');
+    await loadAccounts();
+  } catch (e) {
+    busy.remove(); appendLine({ t: now(), level: 'error', msg: '请求失败：' + e.message });
+  } finally { setCheckinBusy(false); }
+});
+
+/* ===================== 定时签到设置 ===================== */
+async function loadSchedule() {
+  const r = await getJson('/api/schedule');
+  if (!r || !r.ok) return;
+  $('sched-enabled').checked = Boolean(r.enabled);
+  $('sched-time').value = r.time || '08:00';
+  updateSchedText(r);
+}
+function updateSchedText(r) {
+  $('sched-enabled-text').textContent = r.enabled ? '已开启' : '未开启';
+  $('sched-next').textContent = (r.enabled && r.next_run)
+    ? '下次执行：' + new Date(r.next_run).toLocaleString('zh-CN', { hour12: false })
+    : '';
+}
+$('sched-enabled').addEventListener('change', () => {
+  $('sched-enabled-text').textContent = $('sched-enabled').checked ? '已开启' : '未开启';
+});
+$('btn-save-sched').addEventListener('click', async () => {
+  const enabled = $('sched-enabled').checked;
+  const time = $('sched-time').value || '08:00';
+  const r = await post('/api/schedule', { enabled, time });
+  if (r.ok) { updateSchedText(r); toast('定时设置已保存'); }
+  else toast(r.message || '保存失败');
+});
+
+/* ===================== 面板账号设置 ===================== */
+async function loadPanel() {
+  const r = await getJson('/api/panel');
+  if (r && r.ok) {
+    $('panel-username').value = r.username || '';
+    $('panel-user').textContent = r.username || '—';
+  }
+}
+$('btn-save-panel').addEventListener('click', async () => {
+  const username = $('panel-username').value.trim();
+  const current_password = $('panel-current').value;
+  const new_password = $('panel-new').value;
+  if (!current_password) { toast('请输入当前密码'); return; }
+  const r = await post('/api/panel/update', { username, current_password, new_password });
+  if (r.ok) {
+    $('panel-current').value = '';
+    $('panel-new').value = '';
+    $('panel-user').textContent = r.username || username;
+    toast(r.rotated ? '已更新，密码已修改' : '已更新');
+  } else {
+    toast(r.message || '更新失败');
+  }
 });
 
 /* ===================== 退出登录 ===================== */
-document.getElementById('btn-logout').addEventListener('click', async () => {
+$('btn-logout').addEventListener('click', async () => {
   if (!confirm('确定退出登录吗？')) return;
-  try { await post('/api/logout', {}); } catch (e) { /* 忽略，直接跳转 */ }
+  try { await post('/api/logout', {}); } catch (e) { /* 忽略 */ }
   location.href = '/login';
 });
 
-/* ===================== 在线更新 ===================== */
-const updStatus = document.getElementById('upd-status');
-const updText   = document.getElementById('upd-text');
-const updDetail = document.getElementById('upd-detail');
-const updCheck  = document.getElementById('btn-upd-check');
-const updApply  = document.getElementById('btn-upd-apply');
+/* ===================== 系统更新 ===================== */
+const updStatus = $('upd-status');
+const updText = $('upd-text');
+const updDetail = $('upd-detail');
+const updCheck = $('btn-upd-check');
+const updApply = $('btn-upd-apply');
 
 function setUpdateStatus(text, kind) {
   updStatus.className = 'qr-status' + (kind ? ' ' + kind : '');
   updText.textContent = text;
 }
 
-// 检查更新
 updCheck.addEventListener('click', async () => {
   updCheck.disabled = true;
   updDetail.textContent = '';
   setUpdateStatus('正在检查更新 ...', 'wait');
   try {
-    const r = await fetch('/api/update/check', { cache: 'no-store' }).then(x => x.json());
-    if (!r.ok) {
-      setUpdateStatus(r.message || '检查失败', 'err');
-      updApply.disabled = true;
-      return;
-    }
+    const r = await getJson('/api/update/check');
+    if (!r.ok) { setUpdateStatus(r.message || '检查失败', 'err'); updApply.disabled = true; return; }
     if (r.up_to_date) {
       setUpdateStatus('已是最新版本（' + r.local + '）', 'ok');
       updApply.disabled = true;
@@ -690,11 +995,9 @@ updCheck.addEventListener('click', async () => {
   }
 });
 
-// 一键更新并重启
 updApply.addEventListener('click', async () => {
   if (!confirm('确定要更新代码并重启服务吗？更新期间服务会短暂中断。')) return;
   updApply.disabled = true;
-  setBusy(true);
   clearLog();
   const busy = appendBusy('正在拉取最新代码 ...');
   try {
@@ -715,12 +1018,9 @@ updApply.addEventListener('click', async () => {
   } catch (e) {
     busy.remove();
     appendLine({ t: now(), level: 'error', msg: '请求失败：' + e.message });
-  } finally {
-    setBusy(false);
   }
 });
 
-// 更新后轮询，等新进程恢复再刷新页面
 function waitForRestart() {
   const timer = setInterval(async () => {
     try {
@@ -735,17 +1035,14 @@ function waitForRestart() {
   setTimeout(() => clearInterval(timer), 30000);
 }
 
-// 时间戳（本地）
-function now() { return new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
-
-// 页面加载时读取已保存的 Cookie
+/* ===================== 初始化 ===================== */
 (async function init() {
+  await loadPanel();
+  await loadAccounts();
+  await loadSchedule();
   try {
-    const r = await fetch('/api/cookie').then(x => x.json());
-    if (r.saved) {
-      // 已保存则不回填明文，只提示
-      appendLine({ t: now(), level: 'info', msg: '检测到已保存的 Cookie：' + r.masked + '（可直接点击签到）' });
-    }
+    const r = await getJson('/api/cookie');
+    if (r && r.saved) appendLine({ t: now(), level: 'info', msg: '当前账号已保存 Cookie：' + r.masked });
   } catch (e) { /* 忽略 */ }
 })();
 </script>
