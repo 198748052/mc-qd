@@ -128,7 +128,8 @@ class MonkeyCodeClient {
   }
 
   /**
-   * 完整签到流程，返回 { ok, already, checkedIn, balance, captchaToken }。
+   * 完整签到流程，返回
+   * { ok, already, checkedIn, balance, balanceBefore, balanceAfter, earned, captchaToken, user }。
    *
    * @param {(msg: string, level?: string) => void} [log] 日志回调
    */
@@ -142,39 +143,72 @@ class MonkeyCodeClient {
     if (status.checked_in) {
       log('今日已签到，无需重复操作', 'ok');
       const wallet = await this.getWallet();
-      return { ok: true, already: true, checkedIn: true, balance: wallet.balance, user };
+      return {
+        ok: true,
+        already: true,
+        checkedIn: true,
+        balance: wallet.balance,
+        balanceBefore: wallet.balance,
+        balanceAfter: wallet.balance,
+        earned: 0,
+        user,
+      };
     }
 
-    // 3) 取验证挑战
+    // 3) 记录打卡前积分
+    let balanceBefore;
+    try {
+      balanceBefore = (await this.getWallet()).balance;
+      log(`打卡前余额：${balanceBefore}`, 'info');
+    } catch {
+      /* 余额查询失败不影响签到结果 */
+    }
+
+    // 4) 取验证挑战
     const challenge = await this.createCaptchaChallenge();
     const { c, s, d } = challenge.challenge;
     log(`已获取验证挑战：${c} 个子任务 / salt ${s} 位 / 难度 ${d}`, 'info');
 
-    // 4) 本地求解 PoW
+    // 5) 本地求解 PoW
     const t0 = Date.now();
     const solutions = await solveChallenges(challenge.token, c, s, d);
     log(`人机验证已破解（${c} 个解，耗时 ${Date.now() - t0} ms）`, 'ok');
 
-    // 5) 换取 captcha_token
+    // 6) 换取 captcha_token
     const captchaToken = await this.redeemCaptcha(challenge.token, solutions);
     log(`验证通过，captcha_token=${captchaToken}`, 'ok');
 
-    // 6) 签到
+    // 7) 签到
     const checkedIn = await this.doCheckin(captchaToken);
     if (!checkedIn) {
       log('签到未成功（服务端返回 checked_in=false）', 'error');
-      return { ok: false, already: false, checkedIn: false };
+      return { ok: false, already: false, checkedIn: false, balanceBefore };
     }
 
-    // 7) 余额
-    let balance;
+    // 8) 记录打卡后积分
+    let balanceAfter;
     try {
-      balance = (await this.getWallet()).balance;
+      balanceAfter = (await this.getWallet()).balance;
     } catch {
       /* 余额查询失败不影响签到结果 */
     }
-    log(`签到成功！当前余额：${balance}`, 'ok');
-    return { ok: true, already: false, checkedIn: true, balance, captchaToken, user };
+    const earned =
+      typeof balanceBefore === 'number' && typeof balanceAfter === 'number'
+        ? balanceAfter - balanceBefore
+        : undefined;
+    const extra = typeof earned === 'number' ? `（本次获得 ${earned} 积分）` : '';
+    log(`签到成功！当前余额：${balanceAfter}${extra}`, 'ok');
+    return {
+      ok: true,
+      already: false,
+      checkedIn: true,
+      balance: balanceAfter,
+      balanceBefore,
+      balanceAfter,
+      earned,
+      captchaToken,
+      user,
+    };
   }
 }
 

@@ -17,6 +17,7 @@
 const { MonkeyCodeClient, normalizeCookie } = require('./client.js');
 const { CONFIG_PATH } = require('./config.js');
 const store = require('./store.js');
+const logstore = require('./logstore.js');
 
 const USAGE = `MonkeyCode 自动签到
 
@@ -73,9 +74,10 @@ function inScheduledWindow(schedule) {
 }
 
 /** 对单个 Cookie 执行签到 */
-async function checkinOne(cookie, label) {
+async function checkinOne(cookie, label, meta = {}) {
   const client = new MonkeyCodeClient(cookie);
   const result = await client.checkin((msg, level) => log(label ? `[${label}] ${msg}` : msg, level));
+  logstore.recordCheckin(result, meta);
   return result.ok;
 }
 
@@ -99,7 +101,7 @@ async function main() {
   // 临时指定 Cookie（参数或环境变量）：只签一次
   const raw = args.cookie || process.env.MONKEYCODE_COOKIE || '';
   if (raw) {
-    const ok = await checkinOne(normalizeCookie(raw), '');
+    const ok = await checkinOne(normalizeCookie(raw), '', { source: 'cli' });
     return ok ? 0 : 1;
   }
 
@@ -111,7 +113,11 @@ async function main() {
       return 1;
     }
     const acc = store.getAccount(args.id);
-    const ok = await checkinOne(cookie, acc ? acc.name : args.id);
+    const ok = await checkinOne(cookie, acc ? acc.name : args.id, {
+      account_id: args.id,
+      account_name: acc ? acc.name : args.id,
+      source: args.scheduled ? 'scheduled' : 'cli',
+    });
     return ok ? 0 : 1;
   }
 
@@ -130,7 +136,11 @@ async function main() {
       continue;
     }
     try {
-      const ok = await checkinOne(cookie, a.name);
+      const ok = await checkinOne(cookie, a.name, {
+        account_id: a.id,
+        account_name: a.name,
+        source: args.scheduled ? 'scheduled' : 'cli',
+      });
       if (!ok) allOk = false;
     } catch (e) {
       log(`账号「${a.name}」签到失败：${e.message}`, 'error');

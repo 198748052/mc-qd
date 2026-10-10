@@ -373,6 +373,31 @@
     padding: 22px; text-align: center; color: var(--muted); font-size: 12.5px;
   }
 
+  /* ===================== 打卡记录 ===================== */
+  .log-table { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .log-row {
+    display: grid;
+    grid-template-columns: 1.5fr 1.2fr 0.8fr 0.8fr 0.8fr 0.7fr;
+    gap: 10px; align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel-2);
+    padding: 11px 14px;
+    font-size: 12.5px;
+  }
+  .log-row.head {
+    background: transparent; border-style: dashed;
+    color: var(--muted);
+    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+  }
+  .log-row .c-name {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .log-row .c-num { color: var(--muted); }
+  .log-row .c-pts { color: var(--ok); font-weight: 700; }
+  .log-row .c-src { color: var(--muted); font-size: 11px; }
+  .log-row .c-time { color: var(--text); }
+
   /* 开关 */
   .switch-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
   .switch { position: relative; display: inline-block; width: 46px; height: 26px; flex: none; }
@@ -406,6 +431,8 @@
   @media (max-width: 860px) {
     .grid { grid-template-columns: 1fr; }
     .wrap { padding: 28px 16px 48px; }
+    .log-row { grid-template-columns: 1fr 1fr; }
+    .log-row.head { display: none; }
   }
 </style>
 </head>
@@ -426,6 +453,7 @@
   <nav class="tabs reveal" style="animation-delay:.08s">
     <button class="tab active" data-tab="checkin">签到</button>
     <button class="tab" data-tab="accounts">账号管理</button>
+    <button class="tab" data-tab="logs">打卡记录</button>
     <button class="tab" data-tab="settings">系统设置</button>
   </nav>
 
@@ -521,6 +549,18 @@
         <div class="acct-list" id="acct-list"></div>
       </section>
     </div>
+  </section>
+
+  <!-- ================= 打卡记录 ================= -->
+  <section class="tabpane" id="pane-logs" hidden>
+    <section class="card reveal" style="animation-delay:.10s">
+      <h2><span class="dot"></span>打卡记录 <span class="spacer"></span>
+        <button class="mini" id="btn-reload-logs">刷新</button>
+        <button class="mini danger" id="btn-clear-logs">清空</button>
+      </h2>
+      <p class="hint" style="margin-top:6px">记录每次打卡的时间、打卡前后积分以及本次获得的积分，保留最近 1000 条。</p>
+      <div class="log-table" id="log-table"></div>
+    </section>
   </section>
 
   <!-- ================= 系统设置 ================= -->
@@ -654,6 +694,7 @@ document.querySelectorAll('.tab').forEach((btn) => {
     document.querySelectorAll('.tabpane').forEach((p) => {
       p.hidden = p.id !== 'pane-' + btn.dataset.tab;
     });
+    if (btn.dataset.tab === 'logs') loadLogs();
   });
 });
 
@@ -793,6 +834,60 @@ $('btn-add-acct').addEventListener('click', async () => {
     currentId = r.id;
     await loadAccounts();
   } else toast(r.message || '保存失败');
+});
+
+/* ===================== 打卡记录 ===================== */
+const LOG_SOURCE = { manual: '手动', all: '全部', scheduled: '定时', cli: '命令行' };
+
+function fmtPoints(v) {
+  if (v === null || v === undefined) return '—';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return (n > 0 ? '+' : '') + n.toLocaleString();
+}
+
+function fmtBalance(v) {
+  if (v === null || v === undefined) return '—';
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString() : '—';
+}
+
+async function loadLogs() {
+  const box = $('log-table');
+  let r;
+  try { r = await getJson('/api/logs?limit=200'); } catch (e) { r = null; }
+  const logs = (r && r.logs) || [];
+  box.innerHTML =
+    '<div class="log-row head">' +
+      '<span>时间</span><span>账号</span><span>打卡前</span>' +
+      '<span>打卡后</span><span>获得</span><span>来源</span>' +
+    '</div>';
+  if (!logs.length) {
+    const e = document.createElement('div');
+    e.className = 'empty';
+    e.textContent = '还没有打卡记录';
+    box.appendChild(e);
+    return;
+  }
+  for (const it of logs) {
+    const row = document.createElement('div');
+    row.className = 'log-row';
+    row.innerHTML =
+      `<span class="c-time">${esc(fmtTime(it.checkin_at))}</span>` +
+      `<span class="c-name" title="${esc(it.account_name)}">${esc(it.account_name || '（未命名）')}</span>` +
+      `<span class="c-num">${fmtBalance(it.balance_before)}</span>` +
+      `<span class="c-num">${fmtBalance(it.balance_after)}</span>` +
+      `<span class="c-pts">${fmtPoints(it.points)}</span>` +
+      `<span class="c-src">${esc(LOG_SOURCE[it.source] || it.source || '')}</span>`;
+    box.appendChild(row);
+  }
+}
+
+$('btn-reload-logs').addEventListener('click', async () => { await loadLogs(); toast('已刷新'); });
+$('btn-clear-logs').addEventListener('click', async () => {
+  if (!confirm('确定清空全部打卡记录吗？此操作不可恢复。')) return;
+  const r = await post('/api/logs/clear', {});
+  if (r.ok) { toast('已清空'); await loadLogs(); } else toast(r.message || '清空失败');
 });
 
 /* ===================== 扫码登录 ===================== */

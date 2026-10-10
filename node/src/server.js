@@ -24,6 +24,8 @@
  *   POST /api/checkin_all     对所有账号执行签到
  *   GET  /api/schedule        读取定时签到配置
  *   POST /api/schedule        设置定时签到（启用开关 + HH:MM）
+ *   GET  /api/logs            读取打卡日志（时间、打卡前后积分、获得积分）
+ *   POST /api/logs/clear      清空打卡日志（可按账号）
  *   GET  /api/update/check    检查是否有新版本（git fetch + 比较提交）
  *   POST /api/update/apply    拉取最新代码并重启服务（保留本地 config.json）
  *
@@ -42,6 +44,7 @@ const { CONFIG_PATH } = require('./config.js');
 const updater = require('./update.js');
 const auth = require('./auth.js');
 const store = require('./store.js');
+const logstore = require('./logstore.js');
 const scheduler = require('./scheduler.js');
 
 /** 前端页面：直接复用 Python 版的模板，避免两份拷贝 */
@@ -366,7 +369,16 @@ async function apiCheckin(req, res) {
     const captchaToken = await client.redeemCaptcha(challenge.token, solutions);
     logs.push(line('ok', `验证通过，captcha_token=${captchaToken}`));
 
-    // 6) 提交签到
+    // 6) 记录打卡前积分
+    let balanceBefore;
+    try {
+      balanceBefore = (await client.getWallet()).balance;
+      logs.push(line('info', `打卡前余额：${balanceBefore}`));
+    } catch {
+      /* 余额查询失败不影响签到结果 */
+    }
+
+    // 7) 提交签到
     logs.push(line('info', 'POST /api/v1/users/wallet/checkin  提交签到 ...'));
     const checkedIn = await client.doCheckin(captchaToken);
     result.checked_in = checkedIn;
@@ -376,7 +388,7 @@ async function apiCheckin(req, res) {
       return sendJson(res, 200, { ...result, logs });
     }
 
-    // 7) 余额
+    // 8) 记录打卡后积分
     result.ok = true;
     result.captcha_token = captchaToken;
     try {
@@ -384,7 +396,23 @@ async function apiCheckin(req, res) {
     } catch {
       /* 忽略 */
     }
-    logs.push(line('ok', `签到成功！当前余额：${result.balance}`));
+    const earned =
+      typeof balanceBefore === 'number' && typeof result.balance === 'number'
+        ? result.balance - balanceBefore
+        : undefined;
+    result.balance_before = balanceBefore;
+    result.balance_after = result.balance;
+    result.points = earned;
+    logstore.appendLog({
+      account_id: id,
+      account_name: (store.getAccount(id) || {}).name || '',
+      checked_in: true,
+      balance_before: balanceBefore,
+      balance_after: result.balance,
+      source: 'manual',
+    });
+    const extra = typeof earned === 'number' ? `（本次获得 ${earned} 积分）` : '';
+    logs.push(line('ok', `签到成功！当前余额：${result.balance}${extra}`));
   } catch (e) {
     logs.push(line('error', e.message));
   }
@@ -395,9 +423,10 @@ async function apiCheckin(req, res) {
 /**
  * 对所有已保存账号执行签到。
  * @param {(msg:string, level?:string)=>void} [log]
+ * @param {string} [source] 触发来源，写入打卡日志（manual / all / scheduled）
  * @returns {Promise<object[]>} 每个账号的结果
  */
-async function runAllCheckins(log = () => {}) {
+async function runAllCheckins(log = () => {}, source = 'all') {
   const accounts = store.listAccounts();
   const results = [];
   for (const a of accounts) {
@@ -410,12 +439,14 @@ async function runAllCheckins(log = () => {}) {
       const client = new MonkeyCodeClient(cookie);
       const r = await client.checkin((msg, level) => log(`[${a.name}] ${msg}`, level));
       store.markCheckedIn(a.id, { user: r.user, checkedIn: r.checkedIn });
+      logstore.recordCheckin(r, { account_id: a.id, account_name: a.name, source });
       results.push({
         id: a.id,
         name: a.name,
         ok: r.ok,
         checked_in: r.checkedIn,
         balance: r.balance,
+        points: r.earned,
       });
     } catch (e) {
       store.markCheckedIn(a.id, { checkedIn: false });
@@ -464,6 +495,27 @@ async function apiScheduleSet(req, res) {
     time: s.time,
     next_run: scheduler.getNextRun(),
   });
+}
+
+// --------------------------------------------------------------------------- //
+// 打卡日志
+// --------------------------------------------------------------------------- //
+
+/** GET /api/logs —— 读取打卡日志（时间倒序，支持按账号过滤与条数限制） */
+function apiLogsList(url, res) {
+  const accountId = url.searchParams.get('account_id') || '';
+  const limit = url.searchParams.get('limit') || '200';
+  sendJson(res, 200, {
+    ok: true,
+    logs: logstore.listLogs({ account_id: accountId, limit }),
+  });
+}
+
+/** POST /api/logs/clear —— 清空打卡日志（可按账号） */
+async function apiLogsClear(req, res) {
+  const body = await readJsonBody(req);
+  const r = logstore.clearLogs({ account_id: (body.account_id || '').trim() });
+  sendJson(res, 200, { ok: true, removed: r.removed });
 }
 
 // --------------------------------------------------------------------------- //
@@ -571,6 +623,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && pathname === '/api/checkin_all') return await apiCheckinAll(req, res);
     if (req.method === 'GET' && pathname === '/api/schedule') return apiScheduleGet(res);
     if (req.method === 'POST' && pathname === '/api/schedule') return await apiScheduleSet(req, res);
+    if (req.method === 'GET' && pathname === '/api/logs') return apiLogsList(url, res);
+    if (req.method === 'POST' && pathname === '/api/logs/clear') return await apiLogsClear(req, res);
     if (req.method === 'GET' && pathname === '/api/update/check') return await apiUpdateCheck(res);
     if (req.method === 'POST' && pathname === '/api/update/apply') return await apiUpdateApply(req, res);
 
@@ -600,7 +654,7 @@ scheduler.init(async () => {
   const results = await runAllCheckins((msg, level) => {
     const tag = { info: 'INFO', ok: ' OK ', warn: 'WARN', error: 'FAIL' }[level] || 'INFO';
     console.log(`[scheduler] [${tag}] ${msg}`);
-  });
+  }, 'scheduled');
   console.log(`[scheduler] 完成，共 ${results.length} 个账号`);
 });
 
